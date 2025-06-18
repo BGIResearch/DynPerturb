@@ -1,223 +1,104 @@
-import math
 
-import numpy as np
 import torch
-from model.tgn_0208 import TGN
-from sklearn.metrics import average_precision_score, roc_auc_score
-
-
-def eval_edge_prediction(model, negative_edge_sampler, data, n_neighbors, batch_size=200):
-  # Ensures the random sampler uses a seed for evaluation (i.e. we sample always the same
-  # negatives for validation / test set)
-  assert negative_edge_sampler.seed is not None
-  negative_edge_sampler.reset_random_state()
-
-  val_ap, val_auc = [], []
-  with torch.no_grad():
-    model = model.eval()
-    # While usually the test batch size is as big as it fits in memory, here we keep it the same
-    # size as the training batch size, since it allows the memory to be updated more frequently,
-    # and later test batches to access information from interactions in previous test batches
-    # through the memory
-    TEST_BATCH_SIZE = batch_size
-    num_test_instance = len(data.sources)
-    num_test_batch = math.ceil(num_test_instance / TEST_BATCH_SIZE)
-
-    for k in range(num_test_batch):
-      s_idx = k * TEST_BATCH_SIZE
-      e_idx = min(num_test_instance, s_idx + TEST_BATCH_SIZE)
-      sources_batch = data.sources[s_idx:e_idx]
-      destinations_batch = data.destinations[s_idx:e_idx]
-      timestamps_batch = data.timestamps[s_idx:e_idx]
-      edge_idxs_batch = data.edge_idxs[s_idx: e_idx]
-
-      size = len(sources_batch)
-      _, negative_samples = negative_edge_sampler.sample(size)
-
-      pos_prob, neg_prob = model.compute_edge_probabilities(sources_batch, destinations_batch,
-                                                            negative_samples, timestamps_batch,
-                                                            edge_idxs_batch, n_neighbors)
-
-      pred_score = np.concatenate([(pos_prob).cpu().numpy(), (neg_prob).cpu().numpy()])
-      true_label = np.concatenate([np.ones(size), np.zeros(size)])
-
-      val_ap.append(average_precision_score(true_label, pred_score))
-      val_auc.append(roc_auc_score(true_label, pred_score))
-
-  return np.mean(val_ap), np.mean(val_auc)
-
-from sklearn.metrics import average_precision_score, roc_auc_score, accuracy_score
 import numpy as np
-import math
-import torch
-
-def eval_edge_prediction_add(model, negative_edge_sampler, data, n_neighbors, batch_size=200):
-  # Ensures the random sampler uses a seed for evaluation
-  assert negative_edge_sampler.seed is not None
-  negative_edge_sampler.reset_random_state()
-
-  val_ap, val_auc, val_acc = [], [], []
-
-  with torch.no_grad():
-    model = model.eval()
-    TEST_BATCH_SIZE = batch_size
-    num_test_instance = len(data.sources)
-    num_test_batch = math.ceil(num_test_instance / TEST_BATCH_SIZE)
-
-    for k in range(num_test_batch):
-      s_idx = k * TEST_BATCH_SIZE
-      e_idx = min(num_test_instance, s_idx + TEST_BATCH_SIZE)
-      sources_batch = data.sources[s_idx:e_idx]
-      destinations_batch = data.destinations[s_idx:e_idx]
-      timestamps_batch = data.timestamps[s_idx:e_idx]
-      edge_idxs_batch = data.edge_idxs[s_idx:e_idx]
-
-      size = len(sources_batch)
-      _, negative_samples = negative_edge_sampler.sample(size)
-
-      pos_prob, neg_prob = model.compute_edge_probabilities(
-          sources_batch, destinations_batch,
-          negative_samples, timestamps_batch,
-          edge_idxs_batch, n_neighbors
-      )
-
-      y_score = np.concatenate([pos_prob.cpu().numpy(), neg_prob.cpu().numpy()])
-      y_true = np.concatenate([np.ones(size), np.zeros(size)])
-      y_pred = (y_score >= 0.5).astype(int)
-
-      val_ap.append(average_precision_score(y_true, y_score))
-      val_auc.append(roc_auc_score(y_true, y_score))
-      val_acc.append(accuracy_score(y_true, y_pred))
-
-  return np.mean(val_ap), np.mean(val_auc), np.mean(val_acc)
-
-from sklearn.metrics import f1_score
-def eval_edge_prediction_add_1(model, negative_edge_sampler, data, n_neighbors, batch_size=200):
-  # Ensures the random sampler uses a seed for evaluation
-  assert negative_edge_sampler.seed is not None
-  negative_edge_sampler.reset_random_state()
-
-  val_ap, val_auc, val_acc, val_f1 = [], [], [], []
-
-  with torch.no_grad():
-    model = model.eval()
-    TEST_BATCH_SIZE = batch_size
-    num_test_instance = len(data.sources)
-    num_test_batch = math.ceil(num_test_instance / TEST_BATCH_SIZE)
-
-    for k in range(num_test_batch):
-      s_idx = k * TEST_BATCH_SIZE
-      e_idx = min(num_test_instance, s_idx + TEST_BATCH_SIZE)
-      sources_batch = data.sources[s_idx:e_idx]
-      destinations_batch = data.destinations[s_idx:e_idx]
-      timestamps_batch = data.timestamps[s_idx:e_idx]
-      edge_idxs_batch = data.edge_idxs[s_idx:e_idx]
-
-      size = len(sources_batch)
-      _, negative_samples = negative_edge_sampler.sample(size)
-
-      pos_prob, neg_prob = model.compute_edge_probabilities(
-          sources_batch, destinations_batch,
-          negative_samples, timestamps_batch,
-          edge_idxs_batch, n_neighbors
-      )
-
-      y_score = np.concatenate([pos_prob.cpu().numpy(), neg_prob.cpu().numpy()])
-      y_true = np.concatenate([np.ones(size), np.zeros(size)])
-      y_pred = (y_score >= 0.5).astype(int)
-
-      val_ap.append(average_precision_score(y_true, y_score))
-      val_auc.append(roc_auc_score(y_true, y_score))
-      val_acc.append(accuracy_score(y_true, y_pred))
-      val_f1.append(f1_score(y_true, y_pred))  
-
-  return np.mean(val_ap), np.mean(val_auc), np.mean(val_acc), np.mean(val_f1)
+from sklearn.metrics import roc_auc_score, average_precision_score, f1_score
 
 
-
-
-def eval_edge_prediction_new(model, negative_edge_sampler, data, n_neighbors, batch_size=200):
-    """
-    Evaluate edge prediction with the given model and data.
-    """
-    # Ensures the random sampler uses a seed for evaluation (i.e., we sample always the same
-    # negatives for validation / test set)
-    assert negative_edge_sampler.seed is not None
-    negative_edge_sampler.reset_random_state()
-
-    val_ap, val_auc = [], []
-    with torch.no_grad():
-        model = model.eval()
-        # While usually the test batch size is as big as it fits in memory, here we keep it the same
-        # size as the training batch size, since it allows the memory to be updated more frequently,
-        # and later test batches to access information from interactions in previous test batches
-        # through the memory
-        TEST_BATCH_SIZE = batch_size
-        num_test_instance = len(data.sources)
-        num_test_batch = math.ceil(num_test_instance / TEST_BATCH_SIZE)
-
-        for k in range(num_test_batch):
-            s_idx = k * TEST_BATCH_SIZE
-            e_idx = min(num_test_instance, s_idx + TEST_BATCH_SIZE)
-
-            # Fetch data for the current batch
-            sources_batch = data.sources[s_idx:e_idx]
-            destinations_batch = data.destinations[s_idx:e_idx]
-            timestamps_batch = data.timestamps[s_idx:e_idx]
-            celltypes_batch = data.celltypes[s_idx:e_idx]  # 读取 celltype 信息
-            edge_idxs_batch = data.edge_idxs[s_idx:e_idx]
-
-            size = len(sources_batch)
-            _, negative_samples = negative_edge_sampler.sample(size)
-
-            # Compute probabilities for positive and negative edges
-            pos_prob, neg_prob = model.compute_edge_probabilities(
-                sources_batch,
-                destinations_batch,
-                negative_samples,
-                timestamps_batch,
-                edge_idxs_batch,
-                n_neighbors=n_neighbors,
-                celltypes=celltypes_batch  # 传递 celltype 信息
-            )
-
-            # Combine positive and negative probabilities
-            pred_score = np.concatenate([pos_prob.cpu().numpy(), neg_prob.cpu().numpy()])
-            true_label = np.concatenate([np.ones(size), np.zeros(size)])
-
-            # Compute metrics
-            val_ap.append(average_precision_score(true_label, pred_score))
-            val_auc.append(roc_auc_score(true_label, pred_score))
-
-    return np.mean(val_ap), np.mean(val_auc)
-
-
-
-def eval_node_classification(tgn, decoder, data, edge_idxs, batch_size, n_neighbors):
-  pred_prob = np.zeros(len(data.sources))
-  num_instance = len(data.sources)
-  num_batch = math.ceil(num_instance / batch_size)
-
-  with torch.no_grad():
+# ---------- 用于 kidney 的非DDP边预测评估 ----------
+def eval_edge_prediction_add(netmodel, decoder, pos_data, neg_data, args):
+    netmodel.eval()
     decoder.eval()
-    tgn.eval()
-    for k in range(num_batch):
-      s_idx = k * batch_size
-      e_idx = min(num_instance, s_idx + batch_size)
+    y_true, y_score = [], []
+    with torch.no_grad():
+        for (u, i, ts, eidx) in pos_data:
+            u, i, ts, eidx = u.to(args.device), i.to(args.device), ts.to(args.device), eidx.to(args.device)
+            emb_u, _ = netmodel(u, ts, eidx, n_neighbors=args.n_neighbor)
+            emb_i, _ = netmodel(i, ts, eidx, n_neighbors=args.n_neighbor)
+            score = decoder(emb_u, emb_i).squeeze()
+            y_true.extend([1] * len(score))
+            y_score.extend(score.cpu().numpy())
+        for (u, i, ts, eidx) in neg_data:
+            u, i, ts, eidx = u.to(args.device), i.to(args.device), ts.to(args.device), eidx.to(args.device)
+            emb_u, _ = netmodel(u, ts, eidx, n_neighbors=args.n_neighbor)
+            emb_i, _ = netmodel(i, ts, eidx, n_neighbors=args.n_neighbor)
+            score = decoder(emb_u, emb_i).squeeze()
+            y_true.extend([0] * len(score))
+            y_score.extend(score.cpu().numpy())
+    y_pred = (np.array(y_score) > 0.5).astype(int)
+    auc = roc_auc_score(y_true, y_score)
+    ap = average_precision_score(y_true, y_score)
+    f1 = f1_score(y_true, y_pred)
+    return auc, ap, f1
 
-      sources_batch = data.sources[s_idx: e_idx]
-      destinations_batch = data.destinations[s_idx: e_idx]
-      timestamps_batch = data.timestamps[s_idx:e_idx]
-      edge_idxs_batch = edge_idxs[s_idx: e_idx]
+# ---------- 用于 DDP 的边预测评估 ----------
+def eval_edge_prediction_add_ddp_new1(netmodel, decoder, pos_data, neg_data, args):
+    netmodel.eval()
+    decoder.eval()
+    y_true, y_score = [], []
+    with torch.no_grad():
+        for (u, i, ts, eidx) in pos_data:
+            u, i, ts, eidx = u.to(args.device), i.to(args.device), ts.to(args.device), eidx.to(args.device)
+            emb_u, _ = netmodel(u, ts, eidx, n_neighbors=args.n_neighbor)
+            emb_i, _ = netmodel(i, ts, eidx, n_neighbors=args.n_neighbor)
+            score = decoder(emb_u, emb_i).squeeze()
+            y_true.extend([1] * len(score))
+            y_score.extend(score.cpu().numpy())
+        for (u, i, ts, eidx) in neg_data:
+            u, i, ts, eidx = u.to(args.device), i.to(args.device), ts.to(args.device), eidx.to(args.device)
+            emb_u, _ = netmodel(u, ts, eidx, n_neighbors=args.n_neighbor)
+            emb_i, _ = netmodel(i, ts, eidx, n_neighbors=args.n_neighbor)
+            score = decoder(emb_u, emb_i).squeeze()
+            y_true.extend([0] * len(score))
+            y_score.extend(score.cpu().numpy())
+    y_pred = (np.array(y_score) > 0.5).astype(int)
+    auc = roc_auc_score(y_true, y_score)
+    ap = average_precision_score(y_true, y_score)
+    f1 = f1_score(y_true, y_pred)
+    return auc, ap, f1
 
-      source_embedding, destination_embedding, _ = tgn.compute_temporal_embeddings(sources_batch,
-                                                                                   destinations_batch,
-                                                                                   destinations_batch,
-                                                                                   timestamps_batch,
-                                                                                   edge_idxs_batch,
-                                                                                   n_neighbors)
-      pred_prob_batch = decoder(source_embedding).sigmoid()
-      pred_prob[s_idx: e_idx] = pred_prob_batch.cpu().numpy()
+# ---------- 用于 DDP 的节点分类 ----------
 
-  auc_roc = roc_auc_score(data.labels, pred_prob)
-  return auc_roc
+def eval_node_classification_ddp_new1(netmodel, decoder, labels, val_data, args):
+    netmodel.eval()
+    decoder.eval()
+    val_label, val_pred = [], []
+    with torch.no_grad():
+        for batch in val_data:
+            node_ids, timestamps, edge_idxs, labels_batch = batch
+            node_ids = node_ids.to(args.device)
+            timestamps = timestamps.to(args.device)
+            edge_idxs = edge_idxs.to(args.device)
+            labels_batch = labels_batch.to(args.device)
+            embeddings, _ = netmodel(node_ids, timestamps, edge_idxs, n_neighbors=args.n_neighbor)
+            pred = decoder(embeddings).squeeze()
+            val_label.extend(labels_batch.cpu().numpy())
+            val_pred.extend(pred.cpu().numpy())
+    pred_label = (np.array(val_pred) > 0.5).astype(int)
+    f1_macro = f1_score(val_label, pred_label, average='macro')
+    f1_micro = f1_score(val_label, pred_label, average='micro')
+    return f1_macro, f1_micro
+
+# ---------- 多标签分类（sigmoid） ----------
+
+def eval_node_classification_ddp_label(netmodel, decoder, labels, val_data, args):
+    netmodel.eval()
+    decoder.eval()
+    y_true, y_pred = [], []
+    with torch.no_grad():
+        for batch in val_data:
+            node_ids, timestamps, edge_idxs, labels_batch = batch
+            node_ids = node_ids.to(args.device)
+            timestamps = timestamps.to(args.device)
+            edge_idxs = edge_idxs.to(args.device)
+            labels_batch = labels_batch.to(args.device)
+            emb, _ = netmodel(node_ids, timestamps, edge_idxs, n_neighbors=args.n_neighbor)
+            pred = decoder(emb).sigmoid().cpu().numpy()
+            y_pred.append(pred)
+            y_true.append(labels_batch.cpu().numpy())
+    y_true = np.concatenate(y_true)
+    y_pred = np.concatenate(y_pred)
+    y_pred_label = (y_pred > 0.5).astype(int)
+    f1_micro = f1_score(y_true, y_pred_label, average='micro')
+    f1_macro = f1_score(y_true, y_pred_label, average='macro')
+    return f1_macro, f1_micro
+

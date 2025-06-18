@@ -1,3 +1,37 @@
+from evaluation.evaluation import (
+    eval_edge_prediction_add,
+    eval_edge_prediction_add_ddp_new1,
+    eval_node_classification_ddp_new1,
+    eval_node_classification_ddp_label
+)
+
+
+from model.NetModel import NetModel
+
+from modules.MemoryModule import Memory, GRUMemoryUpdater, get_memory_updater
+
+from modules.MessageOps import get_message_function, get_message_aggregator
+
+from utils.DataLoader import (
+    get_data_mulit_0423,
+    get_data_mulit_0512,
+    get_data_node_classification
+)
+
+from utils.utils import (
+    MLP,
+    MergeLayer,
+    FocalLoss,
+    EarlyStopMonitor,
+    RandEdgeSampler,
+    get_neighbor_finder,
+    NeighborFinder
+)
+
+
+
+
+
 import math
 import logging
 import time
@@ -8,10 +42,6 @@ import pickle
 from pathlib import Path
 import torch
 import numpy as np
-from model.tgn_mulit import TGN
-from utils.utils_mulit import EarlyStopMonitor, get_neighbor_finder, MLP, RandEdgeSampler
-from utils.data_processing_mulit import compute_time_statistics, get_data_node_classification, get_data_mulit
-from evaluation.evaluation_mulit import eval_node_classification_ddp_new, eval_edge_prediction_add_ddp_new
 import wandb
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -29,10 +59,10 @@ torch.manual_seed(0)
 wandb.login(key='6d7e1c88be5af66eb5de8e16f39751a37f4110a0')
 import os
 
-os.chdir("/home/share/huadjyin/home/s_qinhua2/02code/tgn-master/human_bone/")
+os.chdir("/home/share/huadjyin/home/s_qinhua2/02code/netmodel-master/human_bone/")
 
 ### Argument and global variables
-parser = argparse.ArgumentParser('TGN self-supervised training')
+parser = argparse.ArgumentParser('NetModel self-supervised training')
 parser.add_argument('-d', '--data', type=str, help='Dataset name (eg. wikipedia or reddit)',
                     default='HumanBone')
 parser.add_argument('--bs', type=int, default=64, help='Batch_size')
@@ -181,8 +211,8 @@ for i in range(args.n_runs):
     rank = dist.get_rank()
     world_size = dist.get_world_size()
     if rank == 0:
-        wandb.init(project='TGN_HumanBone')
-    tgn = TGN(neighbor_finder=train_ngh_finder, node_features=node_features,
+        wandb.init(project='NetModel_HumanBone')
+    netmodel = NetModel(neighbor_finder=train_ngh_finder, node_features=node_features,
               edge_features=edge_features, device=device,
               n_layers=NUM_LAYER,
               n_heads=NUM_HEADS, dropout=DROP_OUT, use_memory=USE_MEMORY,
@@ -197,11 +227,11 @@ for i in range(args.n_runs):
               mean_time_shift_dst=mean_time_shift_dst, std_time_shift_dst=std_time_shift_dst,
               use_destination_embedding_in_message=args.use_destination_embedding_in_message,
               use_source_embedding_in_message=args.use_source_embedding_in_message,
-              num_classes=num_classes)  # 将 num_classes 作为参数传递给 TGN
+              num_classes=num_classes)  # 将 num_classes 作为参数传递给 NetModel
 
-    # tgn.set_neighbor_finder(train_ngh_finder)
-    tgn = tgn.to(device)
-    tgn = DDP(tgn, device_ids=[local_rank], output_device=local_rank, find_unused_parameters=True)
+    # netmodel.set_neighbor_finder(train_ngh_finder)
+    netmodel = netmodel.to(device)
+    netmodel = DDP(netmodel, device_ids=[local_rank], output_device=local_rank, find_unused_parameters=True)
 
     num_instance = len(train_data.sources)
     num_batch = math.ceil(num_instance / BATCH_SIZE)
@@ -209,12 +239,12 @@ for i in range(args.n_runs):
     logger.debug('Num of training instances: {}'.format(num_instance))
     logger.debug('Num of batches per epoch: {}'.format(num_batch))
 
-    logger.info('TGN models loaded')
+    logger.info('NetModel models loaded')
     logger.info('Start training node classification task')
 
     # Setup model, optimizer, etc.
-    # optimizer = torch.optim.Adam(tgn.parameters(), lr=args.lr)
-    optimizer = torch.optim.Adam(tgn.parameters(), lr=args.lr, weight_decay=1e-5)
+    # optimizer = torch.optim.Adam(netmodel.parameters(), lr=args.lr)
+    optimizer = torch.optim.Adam(netmodel.parameters(), lr=args.lr, weight_decay=1e-5)
 
     val_aucs = []
     train_losses = []
@@ -258,15 +288,15 @@ for i in range(args.n_runs):
 
         # Initialize memory of the model at each epoch
         if USE_MEMORY:
-            tgn.module.memory.__init_memory__()
+            netmodel.module.memory.__init_memory__()
             
         # Train using only training graph
-        # tgn.set_neighbor_finder(train_ngh_finder)
-        tgn.module.set_neighbor_finder(train_ngh_finder) 
+        # netmodel.set_neighbor_finder(train_ngh_finder)
+        netmodel.module.set_neighbor_finder(train_ngh_finder) 
         
         optimizer.zero_grad()
 
-        tgn = tgn.train()
+        netmodel = netmodel.train()
 
         m_loss = []  
 
@@ -286,9 +316,9 @@ for i in range(args.n_runs):
 
             optimizer.zero_grad()
             
-            # tgn = tgn.train()
+            # netmodel = netmodel.train()
 
-            pos_score, neg_score, node_classification_logits = tgn(
+            pos_score, neg_score, node_classification_logits = netmodel(
                 sources_batch, destinations_batch, negatives_batch, timestamps_batch, edge_idxs_batch)
 
             # 链接预测任务的损失 (使用 BCE 损失)
@@ -350,47 +380,47 @@ for i in range(args.n_runs):
         # Detach memory after 'args.backprop_every' number of batches so we don't backpropagate to
         # the start of time
         if USE_MEMORY:
-            tgn.module.memory.detach_memory()
+            netmodel.module.memory.detach_memory()
             
         ### Validation
         # Validation uses the full graph
-        tgn.module.set_neighbor_finder(full_ngh_finder)
+        netmodel.module.set_neighbor_finder(full_ngh_finder)
 
         if USE_MEMORY:
             # Backup memory at the end of training, so later we can restore it and use it for the
             # validation on unseen nodes
-            train_memory_backup = tgn.module.memory.backup_memory()
+            train_memory_backup = netmodel.module.memory.backup_memory()
 
         # 评估连接预测任务的 AUC
         val_ap_link_prediction, val_auc_link_prediction, val_precision_link_prediction, val_recall_link_prediction, val_f1_link_prediction, val_acc_link_prediction = eval_edge_prediction_add_ddp_new(
-            tgn, val_rand_sampler, val_data, NUM_NEIGHBORS, BATCH_SIZE)
+            netmodel, val_rand_sampler, val_data, NUM_NEIGHBORS, BATCH_SIZE)
 
         # 评估节点分类任务的 AUC
         val_auc_node_classification, precision, recall, f1, support, pred_prob,true_labels_val = eval_node_classification_ddp_new(
-            tgn, val_data, full_data.edge_idxs, BATCH_SIZE, NUM_NEIGHBORS, num_classes)
+            netmodel, val_data, full_data.edge_idxs, BATCH_SIZE, NUM_NEIGHBORS, num_classes)
         
         # print('val_auc_node_classification',val_auc_node_classification)
         # print('val_auc_node_classification',val_auc_node_classification.dtype())
 
         if USE_MEMORY:
-            val_memory_backup = tgn.module.memory.backup_memory()
+            val_memory_backup = netmodel.module.memory.backup_memory()
             # Restore memory we had at the end of training to be used when validating on new nodes.
             # Also backup memory after validation so it can be used for testing (since test edges are
             # strictly later in time than validation edges)
-            tgn.module.memory.restore_memory(train_memory_backup)
+            netmodel.module.memory.restore_memory(train_memory_backup)
 
 
         # Validate on unseen nodes
 
         nn_val_ap, nn_val_auc, nn_val_precision, nn_val_recall, nn_val_f1, nn_val_acc = eval_edge_prediction_add_ddp_new(
-            model=tgn,
+            model=netmodel,
             negative_edge_sampler=val_rand_sampler,
             data=new_node_val_data,
             n_neighbors=NUM_NEIGHBORS)
 
         if USE_MEMORY:
             # Restore memory we had at the end of validation
-            tgn.module.memory.restore_memory(val_memory_backup)
+            netmodel.module.memory.restore_memory(val_memory_backup)
 
         logger.info(f"[Epoch {epoch + 1}] Val Link Prediction AUC: {val_auc_link_prediction:.4f}")
         for i in range(len(val_auc_node_classification)):
@@ -449,7 +479,7 @@ for i in range(args.n_runs):
         if dist.get_rank() == 0 and combined_auc > best_combined_auc:
             best_combined_auc = combined_auc
             best_model_epoch = epoch
-            torch.save(tgn.module.state_dict(), get_checkpoint_path(epoch))
+            torch.save(netmodel.module.state_dict(), get_checkpoint_path(epoch))
             logger.info(f"✅ Best model saved at epoch {epoch + 1} with Combined AUC: {best_combined_auc:.4f}")
             logger.info(f"   ↳ Link Prediction AUC: {val_auc_link_prediction:.4f}")
             # logger.info(f"   ↳ Node Classification Auc (Mean): {val_auc_node_classification_mean:.4f}")
@@ -471,10 +501,10 @@ for i in range(args.n_runs):
 
     # 加载最佳模型
     # logger.info(f'Loading the best model from epoch {best_model_epoch}')
-    # tgn.module.load_state_dict(torch.load(get_checkpoint_path(best_model_epoch)))
+    # netmodel.module.load_state_dict(torch.load(get_checkpoint_path(best_model_epoch)))
     
     if dist.get_rank() == 0:
-        torch.save(tgn.module.state_dict(), get_checkpoint_path(epoch))
+        torch.save(netmodel.module.state_dict(), get_checkpoint_path(epoch))
         logger.info(f"... saved ...")
 
     # 所有进程同步，确保文件写入完成再读
@@ -493,31 +523,31 @@ for i in range(args.n_runs):
 
 
     # 所有进程一起加载
-    tgn.module.load_state_dict(torch.load(get_checkpoint_path(best_model_epoch)))
+    netmodel.module.load_state_dict(torch.load(get_checkpoint_path(best_model_epoch)))
 
 
     # Training has finished, we have loaded the best model, and we want to backup its current
     # memory (which has seen validation edges) so that it can also be used when testing on unseen
     # nodes
     if USE_MEMORY:
-        val_memory_backup = tgn.module.memory.backup_memory()
+        val_memory_backup = netmodel.module.memory.backup_memory()
 
  
       ### Test
-    tgn.module.embedding_module.neighbor_finder = full_ngh_finder
+    netmodel.module.embedding_module.neighbor_finder = full_ngh_finder
 
     # 测试集评估
     test_ap_link_prediction, test_auc_link_prediction, test_precision_link_prediction, test_recall_link_prediction, test_f1_link_prediction, test_acc_link_prediction = eval_edge_prediction_add_ddp_new(
-        tgn, test_rand_sampler, test_data, NUM_NEIGHBORS, BATCH_SIZE)
+        netmodel, test_rand_sampler, test_data, NUM_NEIGHBORS, BATCH_SIZE)
 
     test_auc_node_classification, precision, recall, f1, support, pred_prob, true_labels= eval_node_classification_ddp_new(
-        tgn, test_data, full_data.edge_idxs, BATCH_SIZE, NUM_NEIGHBORS, num_classes)
+        netmodel, test_data, full_data.edge_idxs, BATCH_SIZE, NUM_NEIGHBORS, num_classes)
 
     if USE_MEMORY:
-        tgn.module.memory.restore_memory(val_memory_backup)
+        netmodel.module.memory.restore_memory(val_memory_backup)
 
     nn_test_ap, nn_test_auc, nn_test_precision, nn_test_recall, nn_test_f1, nn_test_acc = eval_edge_prediction_add_ddp_new(
-        model=tgn,
+        model=netmodel,
         negative_edge_sampler=nn_test_rand_sampler,
         data=new_node_test_data,
         n_neighbors=NUM_NEIGHBORS)
@@ -594,13 +624,13 @@ for i in range(args.n_runs):
         plt.close()
     logger.info(f'Test Link Prediction AUC: {test_auc_link_prediction}')
     logger.info(f'Test Node Classification AUC: {test_auc_node_classification}')
-    logger.info('Saving TGN model')
+    logger.info('Saving NetModel model')
 
     if USE_MEMORY:
         # Restore memory at the end of validation (save a model which is ready for testing)
-        tgn.module.memory.restore_memory(val_memory_backup)
-    torch.save(tgn.module.state_dict(), MODEL_SAVE_PATH)
-    logger.info('TGN model saved')
+        netmodel.module.memory.restore_memory(val_memory_backup)
+    torch.save(netmodel.module.state_dict(), MODEL_SAVE_PATH)
+    logger.info('NetModel model saved')
 
 # Finish the wandb run
 wandb.finish()

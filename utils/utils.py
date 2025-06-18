@@ -301,3 +301,27 @@ class NeighborFinder:
           edge_idxs[i, n_neighbors - len(source_edge_idxs):] = source_edge_idxs
 
     return neighbors, edge_idxs, edge_times
+
+# === 以下为 utils_mulit 中独有的部分 ===
+
+
+# class MLP(torch.nn.Module):
+#   def __init__(self, dim, drop=0.3):
+#     super().__init__()
+#     self.fc_1 = torch.nn.Linear(dim, 80)
+#     self.fc_2 = torch.nn.Linear(80, 10)
+#     self.fc_3 = torch.nn.Linear(10, 1)
+#     self.act = torch.nn.ReLU()
+#     self.dropout = torch.nn.Dropout(p=drop, inplace=False)
+
+def early_stop_check(self, curr_val):
+    if not self.higher_better:
+      curr_val *= -1
+    if self.last_best is None:
+      self.last_best = curr_val
+    elif (curr_val - self.last_best) / np.abs(self.last_best) > self.tolerance:
+      self.last_best = curr_val
+      self.num_round = 0
+      self.best_epoch = self.epoch_count
+    else:
+      self.num_round += 1

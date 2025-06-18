@@ -1,3 +1,41 @@
+from evaluation.evaluation import (
+    eval_edge_prediction_add,
+    eval_edge_prediction_add_ddp_new1,
+    eval_node_classification_ddp_new1,
+    eval_node_classification_ddp_label
+)
+
+
+from model.NetModel import NetModel
+
+from modules.MemoryModule import Memory, GRUMemoryUpdater, get_memory_updater
+
+from modules.MessageOps import get_message_function, get_message_aggregator
+
+from utils.DataLoader import (
+    get_data_mulit_0423,
+    get_data_mulit_0512,
+    get_data_node_classification,
+    get_data_0423_70_15_15,
+    compute_time_statistics
+)
+
+from utils.utils import (
+    MLP,
+    MergeLayer,
+    FocalLoss,
+    EarlyStopMonitor,
+    RandEdgeSampler,
+    get_neighbor_finder,
+    NeighborFinder
+)
+
+
+
+
+
+
+
 import math
 import logging
 import time
@@ -11,11 +49,7 @@ import shutil  # 新增用于复制文件
 import os
 from copy import deepcopy
 
-from evaluation.evaluation import eval_edge_prediction,eval_edge_prediction_add_1
-# from model.tgn_0417 import TGN
-from model.tgn_0208 import TGN
-from utils.utils import EarlyStopMonitor, RandEdgeSampler, get_neighbor_finder
-from utils.data_processing0208 import get_data,get_data_0313,get_data_0422, get_data_0422_70_15_15,get_data_0423_60_15_25,get_data_0423_70_15_15,compute_time_statistics
+# from model.netmodel_0417 import NetModel
 
 # os.environ["WANDB_API_KEY"] = "6d7e1c88be5af66eb5de8e16f39751a37f4110a0"
 
@@ -32,7 +66,7 @@ import swanlab
 import logging
 logging.getLogger("urllib3").setLevel(logging.WARNING)
 
-os.chdir("/home/share/huadjyin/home/s_qinhua2/02code/tgn-master/kidney/") 
+os.chdir("/home/share/huadjyin/home/s_qinhua2/02code/netmodel-master/kidney/") 
 torch.manual_seed(0)
 np.random.seed(0)
 # wandb.login(key='6d7e1c88be5af66eb5de8e16f39751a37f4110a0')
@@ -40,7 +74,7 @@ settings = Settings(requirements_collect=False, conda_collect=False)
 swanlab.login(api_key="tIhGTN0qRK2hMyAyqdl9M")
 # wandb.login()
 ### Argument and global variables
-parser = argparse.ArgumentParser('TGN self-supervised training')
+parser = argparse.ArgumentParser('NetModel self-supervised training')
 parser.add_argument('-d', '--data', type=str, help='Dataset name (eg. wikipedia or reddit)',
                     default='celltype32')
 parser.add_argument('--bs', type=int, default=200, help='Batch_size')#200
@@ -95,8 +129,8 @@ except:
   parser.print_help()
   sys.exit(0)
   
-# wandb.init(project='TGN_kidney', config=args)
-swanlab.init(project="TGN_kidney", workspace="zzzzzzzzzzzzz", config=args,settings=settings)  # ← 这行禁用 pixi 自动依赖收集
+# wandb.init(project='NetModel_kidney', config=args)
+swanlab.init(project="NetModel_kidney", workspace="zzzzzzzzzzzzz", config=args,settings=settings)  # ← 这行禁用 pixi 自动依赖收集
 BATCH_SIZE = args.bs
 NUM_NEIGHBORS = args.n_degree
 NUM_NEG = 1
@@ -202,7 +236,7 @@ for i in range(args.n_runs):
 #   Path("results/").mkdir(parents=True, exist_ok=True)
 
   # Initialize Model
-  tgn = TGN(neighbor_finder=train_ngh_finder, node_features=node_features,
+  netmodel = NetModel(neighbor_finder=train_ngh_finder, node_features=node_features,
             edge_features=edge_features, device=device,
             n_layers=NUM_LAYER,
             n_heads=NUM_HEADS, dropout=DROP_OUT, use_memory=USE_MEMORY,
@@ -219,8 +253,8 @@ for i in range(args.n_runs):
             use_source_embedding_in_message=args.use_source_embedding_in_message,
             dyrep=args.dyrep)
   criterion = torch.nn.BCELoss()
-  optimizer = torch.optim.Adam(tgn.parameters(), lr=LEARNING_RATE)
-  tgn = tgn.to(device)
+  optimizer = torch.optim.Adam(netmodel.parameters(), lr=LEARNING_RATE)
+  netmodel = netmodel.to(device)
 
   num_instance = len(train_data.sources)
   num_batch = math.ceil(num_instance / BATCH_SIZE)
@@ -243,10 +277,10 @@ for i in range(args.n_runs):
 
     # Reinitialize memory of the model at the start of each epoch
     if USE_MEMORY:
-      tgn.memory.__init_memory__()
+      netmodel.memory.__init_memory__()
 
     # Train using only training graph
-    tgn.set_neighbor_finder(train_ngh_finder)
+    netmodel.set_neighbor_finder(train_ngh_finder)
     m_loss = []
 
     logger.info('start {} epoch'.format(epoch))
@@ -276,9 +310,9 @@ for i in range(args.n_runs):
           pos_label = torch.ones(size, dtype=torch.float, device=device)
           neg_label = torch.zeros(size, dtype=torch.float, device=device)
 
-        tgn = tgn.train()
+        netmodel = netmodel.train()
 
-        pos_prob, neg_prob = tgn.compute_edge_probabilities(sources_batch, destinations_batch, negatives_batch,
+        pos_prob, neg_prob = netmodel.compute_edge_probabilities(sources_batch, destinations_batch, negatives_batch,
                                                             timestamps_batch, edge_idxs_batch, NUM_NEIGHBORS)
         
 
@@ -299,51 +333,51 @@ for i in range(args.n_runs):
       # Detach memory after 'args.backprop_every' number of batches so we don't backpropagate to
       # the start of time
       if USE_MEMORY:
-        tgn.memory.detach_memory()
+        netmodel.memory.detach_memory()
 
     epoch_time = time.time() - start_epoch
     epoch_times.append(epoch_time)
 
     ### Validation
     # Validation uses the full graph
-    tgn.set_neighbor_finder(full_ngh_finder)
+    netmodel.set_neighbor_finder(full_ngh_finder)
 
     if USE_MEMORY:
       # Backup memory at the end of training, so later we can restore it and use it for the
       # validation on unseen nodes
-      train_memory_backup = tgn.memory.backup_memory()
+      train_memory_backup = netmodel.memory.backup_memory()
 
-    # val_ap, val_auc = eval_edge_prediction(model=tgn,
+    # val_ap, val_auc = eval_edge_prediction(model=netmodel,
     #                                                         negative_edge_sampler=val_rand_sampler,
     #                                                         data=val_data,
     #                                                         n_neighbors=NUM_NEIGHBORS)
-    val_ap, val_auc,val_acc, val_f1 = eval_edge_prediction_add_1(model=tgn,
+    val_ap, val_auc,val_acc, val_f1 = eval_edge_prediction_add_1(model=netmodel,
                                                             negative_edge_sampler=val_rand_sampler,
                                                             data=val_data,
                                                             n_neighbors=NUM_NEIGHBORS)
     if USE_MEMORY:
-      val_memory_backup = tgn.memory.backup_memory()
+      val_memory_backup = netmodel.memory.backup_memory()
       # Restore memory we had at the end of training to be used when validating on new nodes.
       # Also backup memory after validation so it can be used for testing (since test edges are
       # strictly later in time than validation edges)
-      tgn.memory.restore_memory(train_memory_backup)
+      netmodel.memory.restore_memory(train_memory_backup)
 
     
     if USE_MEMORY:
-      tgn.memory.__init_memory__()
+      netmodel.memory.__init_memory__()
     # Validate on unseen nodes
-    # nn_val_ap, nn_val_auc = eval_edge_prediction(model=tgn,
+    # nn_val_ap, nn_val_auc = eval_edge_prediction(model=netmodel,
     #                                                                     negative_edge_sampler=val_rand_sampler,
     #                                                                     data=new_node_val_data,
     #                                                                     n_neighbors=NUM_NEIGHBORS)
-    nn_val_ap, nn_val_auc,nn_val_acc, nn_val_f1 = eval_edge_prediction_add_1(model=tgn,
+    nn_val_ap, nn_val_auc,nn_val_acc, nn_val_f1 = eval_edge_prediction_add_1(model=netmodel,
                                                                         negative_edge_sampler=val_rand_sampler,
                                                                         data=new_node_val_data,
                                                                         n_neighbors=NUM_NEIGHBORS)
 
     if USE_MEMORY:
       # Restore memory we had at the end of validation
-      tgn.memory.restore_memory(val_memory_backup)
+      netmodel.memory.restore_memory(val_memory_backup)
 
     new_nodes_val_aps.append(nn_val_ap)
     val_aps.append(val_ap)
@@ -403,7 +437,7 @@ for i in range(args.n_runs):
 
 
     # 保存当前 epoch 的嵌入
-    #tgn.embedding_module.save_embeddings(EMBEDDING_DIR, epoch)
+    #netmodel.embedding_module.save_embeddings(EMBEDDING_DIR, epoch)
     
      # **检查是否为最佳模型**
     # W_AUC = 0.5
@@ -418,8 +452,8 @@ for i in range(args.n_runs):
       best_loss = val_auc
       best_epoch = epoch
       early_stopper.best_epoch = epoch
-      early_stopper.best_model_state = deepcopy(tgn.state_dict())
-      torch.save(tgn.state_dict(), MODEL_SAVE_PATH)
+      early_stopper.best_model_state = deepcopy(netmodel.state_dict())
+      torch.save(netmodel.state_dict(), MODEL_SAVE_PATH)
       logger.info(f'Best model saved at epoch {epoch}')
       #shutil.copyfile(f"{EMBEDDING_DIR}/embeddings_epoch_{epoch}.json", BEST_EMBEDDING_PATH)
 
@@ -427,47 +461,47 @@ for i in range(args.n_runs):
     if early_stopper.early_stop_check_raw(val_auc):
         logger.info(f'No improvement over {args.patience} epochs, stopping training at epoch {epoch}')
         logger.info(f'Loading the best model at epoch {early_stopper.best_epoch}')
-        tgn.load_state_dict(torch.load(MODEL_SAVE_PATH))
+        netmodel.load_state_dict(torch.load(MODEL_SAVE_PATH))
         logger.info(f'Loaded the best model at epoch {early_stopper.best_epoch} for inference')
-        tgn.eval()
+        netmodel.eval()
         break
     else:
-        torch.save(tgn.state_dict(), get_checkpoint_path(epoch))
+        torch.save(netmodel.state_dict(), get_checkpoint_path(epoch))
 
   
 
   # 训练结束后，加载最佳模型
   if best_epoch != -1:
-    tgn.load_state_dict(early_stopper.best_model_state)
+    netmodel.load_state_dict(early_stopper.best_model_state)
     logger.info(f'Loaded the best model from epoch {best_epoch} for testing')
 
   # 训练结束后，备份最佳模型的内存
   if USE_MEMORY:
-    best_memory_backup = tgn.memory.backup_memory()
+    best_memory_backup = netmodel.memory.backup_memory()
     
   if USE_MEMORY:
-    tgn.memory.__init_memory__()
+    netmodel.memory.__init_memory__()
 
   ### Test
-  tgn.embedding_module.neighbor_finder = full_ngh_finder
-  # test_ap, test_auc = eval_edge_prediction(model=tgn,
+  netmodel.embedding_module.neighbor_finder = full_ngh_finder
+  # test_ap, test_auc = eval_edge_prediction(model=netmodel,
   #                                                             negative_edge_sampler=test_rand_sampler,
   #                                                             data=test_data,
   #                                                             n_neighbors=NUM_NEIGHBORS)
-  test_ap, test_auc,test_acc, test_f1 = eval_edge_prediction_add_1(model=tgn,
+  test_ap, test_auc,test_acc, test_f1 = eval_edge_prediction_add_1(model=netmodel,
                                                               negative_edge_sampler=test_rand_sampler,
                                                               data=test_data,
                                                               n_neighbors=NUM_NEIGHBORS)
 
   if USE_MEMORY:
-    tgn.memory.restore_memory(best_memory_backup)
+    netmodel.memory.restore_memory(best_memory_backup)
 
   # Test on unseen nodes
-  # nn_test_ap, nn_test_auc = eval_edge_prediction(model=tgn,
+  # nn_test_ap, nn_test_auc = eval_edge_prediction(model=netmodel,
   #                                                                         negative_edge_sampler=nn_test_rand_sampler,
   #                                                                         data=new_node_test_data,
   #                                                                         n_neighbors=NUM_NEIGHBORS)
-  nn_test_ap, nn_test_auc,nn_test_acc, nn_test_f1 = eval_edge_prediction_add_1(model=tgn,
+  nn_test_ap, nn_test_auc,nn_test_acc, nn_test_f1 = eval_edge_prediction_add_1(model=netmodel,
                                                                           negative_edge_sampler=nn_test_rand_sampler,
                                                                           data=new_node_test_data,
                                                                           n_neighbors=NUM_NEIGHBORS)
@@ -513,14 +547,14 @@ for i in range(args.n_runs):
     "total_epoch_times": total_epoch_times
   }, open(results_path, "wb"))
 
-  logger.info('Saving TGN model')
+  logger.info('Saving NetModel model')
   if USE_MEMORY:
     # Restore memory at the end of validation (save a model which is ready for testing)
-    tgn.memory.restore_memory(best_memory_backup)
-  torch.save(tgn.state_dict(), MODEL_SAVE_PATH)
-  logger.info('TGN model saved')
+    netmodel.memory.restore_memory(best_memory_backup)
+  torch.save(netmodel.state_dict(), MODEL_SAVE_PATH)
+  logger.info('NetModel model saved')
 
-  #tgn.embedding_module.save_embeddings(EMBEDDING_DIR, best_epoch)
+  #netmodel.embedding_module.save_embeddings(EMBEDDING_DIR, best_epoch)
   #shutil.copyfile(f"{EMBEDDING_DIR}/embeddings_epoch_{best_epoch}.json", BEST_EMBEDDING_PATH)
   #logger.info(f'All node embeddings saved to {BEST_EMBEDDING_PATH}')
 
