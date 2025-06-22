@@ -1,6 +1,6 @@
 from evaluation.evaluation import (
-    eval_node_classification_ddp_new,
-    eval_edge_prediction_add_ddp_new,
+    node_classification_eval,
+    edge_prediction_eval2,
 )
 
 from model.NetModel import NetModel
@@ -449,11 +449,11 @@ for i in range(args.n_runs):
             val_recall_link_prediction,
             val_f1_link_prediction,
             val_acc_link_prediction,
-        ) = eval_edge_prediction_add_ddp_new(
+        ) = edge_prediction_eval2(
             netmodel,
             val_rand_sampler,
             val_data,
-            NUM_NEIGHBORS,
+            NUM_NEIGHBORS,eval
             BATCH_SIZE,
         )
 
@@ -466,7 +466,7 @@ for i in range(args.n_runs):
             support,
             pred_prob,
             true_labels_val,
-        ) = eval_node_classification_ddp_new(
+        ) = node_classification_eval(
             netmodel,
             val_data,
             full_data.edge_idxs,
@@ -490,7 +490,7 @@ for i in range(args.n_runs):
             nn_val_recall,
             nn_val_f1,
             nn_val_acc,
-        ) = eval_edge_prediction_add_ddp_new(
+        ) = edge_prediction_eval2(
             model=netmodel,
             negative_edge_sampler=val_rand_sampler,
             data=new_node_val_data,

@@ -1,4 +1,4 @@
-from evaluation.evaluation import eval_edge_prediction_add_1
+from evaluation.evaluation import edge_prediction_eval1
 from model.NetModel import NetModel
 from utils.DataLoader import get_data_link1, compute_time_statistics
 from utils.utils import EarlyStopMonitor, RandEdgeSampler, get_neighbor_finder
@@ -334,7 +334,7 @@ for i in range(args.n_runs):
             netmodel.memory.restore_memory(train_memory_backup)
         if USE_MEMORY:
             netmodel.memory.__init_memory__()
-        nn_val_ap, nn_val_auc, nn_val_acc, nn_val_f1 = eval_edge_prediction_add_1(
+        nn_val_ap, nn_val_auc, nn_val_acc, nn_val_f1 = edge_prediction_eval1(
             model=netmodel,
             negative_edge_sampler=val_rand_sampler,
             data=new_node_val_data,
