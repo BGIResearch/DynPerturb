@@ -12,6 +12,7 @@ import pickle
 from pathlib import Path
 import os
 from copy import deepcopy
+import logging
 
 # Set working directory and random seeds (modify as needed)
 os.chdir("./")  # Use project root as working directory. Adjust if needed.
@@ -170,6 +171,23 @@ Path(LOG_DIR).mkdir(parents=True, exist_ok=True)
 
 MODEL_SAVE_PATH = f"{MODEL_DIR}/{args.prefix}_best_model.pth"
 
+### set up logger
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger()
+logger.setLevel(logging.DEBUG)
+# Path("log/").mkdir(parents=True, exist_ok=True)
+# fh = logging.FileHandler('log/{}.log'.format(str(time.time())))
+fh = logging.FileHandler(f'/home/share/huadjyin/home/s_qinhua2/02code/guozhihan/DynPertub/log/link1_log/train.log')
+fh.setLevel(logging.DEBUG)
+ch = logging.StreamHandler()
+ch.setLevel(logging.WARN)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+fh.setFormatter(formatter)
+ch.setFormatter(formatter)
+logger.addHandler(fh)
+logger.addHandler(ch)
+logger.info(args)
+
 
 def get_checkpoint_path(epoch):
     return f"{CHECKPOINT_DIR}/{args.prefix}_checkpoint_epoch_{epoch}.pth"
@@ -262,6 +280,8 @@ for i in range(args.n_runs):
 
     num_instance = len(train_data.sources)
     num_batch = math.ceil(num_instance / BATCH_SIZE)
+    logger.info('num of training instances: {}'.format(num_instance))
+    logger.info('num of batches per epoch: {}'.format(num_batch))
     idx_list = np.arange(num_instance)
     new_nodes_val_aps = []
     val_aps = []
@@ -272,7 +292,10 @@ for i in range(args.n_runs):
     best_loss = 0
     best_epoch = -1
     for epoch in range(NUM_EPOCH):
+        print('start')
+        print(f"\nEpoch {epoch + 1}/{NUM_EPOCH}")
         start_epoch = time.time()
+        logger.info('start {} epoch'.format(epoch))
         # Training phase
         if USE_MEMORY:
             netmodel.memory.__init_memory__()
@@ -319,11 +342,16 @@ for i in range(args.n_runs):
                 netmodel.memory.detach_memory()
         epoch_time = time.time() - start_epoch
         epoch_times.append(epoch_time)
+
+        # Print average training loss for this epoch
+        avg_train_loss = np.mean(m_loss)
+        print(f"Training Loss: {avg_train_loss:.4f} (Epoch Time: {epoch_time:.2f}s)")
+
         # Validation phase
         netmodel.set_neighbor_finder(full_ngh_finder)
         if USE_MEMORY:
             train_memory_backup = netmodel.memory.backup_memory()
-        val_ap, val_auc, val_acc, val_f1 = eval_edge_prediction_add_1(
+        val_ap, val_auc, val_acc, val_f1 = edge_prediction_eval1(
             model=netmodel,
             negative_edge_sampler=val_rand_sampler,
             data=val_data,
@@ -346,6 +374,11 @@ for i in range(args.n_runs):
         val_aps.append(val_ap)
         epoch_loss = np.mean(m_loss)
         train_losses.append(epoch_loss)
+
+        # Print validation performance
+        print(f"Validation AP: {val_ap:.4f} | AUC: {val_auc:.4f} | Accuracy: {val_acc:.4f} | F1: {val_f1:.4f}")
+
+
         # Save training/validation results with exception handling
         try:
             with open(results_path, "wb") as f:
@@ -363,19 +396,47 @@ for i in range(args.n_runs):
             print(f"[Warning] Failed to save results: {e}")
         total_epoch_time = time.time() - start_epoch
         total_epoch_times.append(total_epoch_time)
+        logger.info('epoch: {} took {:.2f}s'.format(epoch, total_epoch_time))
+        logger.info('Epoch mean loss: {}'.format(np.mean(m_loss)))
+        # logger.info(
+        #   'val auc: {}, new node val auc: {}'.format(val_auc, nn_val_auc))
+        # logger.info(
+        #   'val ap: {}, new node val ap: {}'.format(val_ap, nn_val_ap))
+        # logger.info(
+        #   'val acc: {}, new node val acc: {}'.format(val_acc, nn_val_acc))
+        logger.info(
+        'Validation statistics: Old nodes -- auc: {:.4f}, ap: {:.4f}, acc: {:.4f}, f1: {:.4f}'.format(
+            val_auc, val_ap, val_acc, val_f1))
+        logger.info(
+            'Validation statistics: New nodes -- auc: {:.4f}, ap: {:.4f}, acc: {:.4f}, f1: {:.4f}'.format(
+                nn_val_auc, nn_val_ap, nn_val_acc, nn_val_f1))
         if val_auc > best_loss:
             best_loss = val_auc
             best_epoch = epoch
             early_stopper.best_epoch = epoch
             early_stopper.best_model_state = deepcopy(netmodel.state_dict())
             torch.save(netmodel.state_dict(), MODEL_SAVE_PATH)
+            logger.info(f'Best model saved at epoch {epoch}')
+        # if early_stopper.early_stop_check_raw(val_auc):
+            
+        #     netmodel.eval()
+
+        #     break
+        # else:
+        #     torch.save(netmodel.state_dict(), get_checkpoint_path(epoch))
         if early_stopper.early_stop_check_raw(val_auc):
+            logger.info(f'No improvement over {args.patience} epochs, stopping training at epoch {epoch}')
+            logger.info(f'Loading the best model at epoch {early_stopper.best_epoch}')
+            netmodel.load_state_dict(torch.load(MODEL_SAVE_PATH))
+            logger.info(f'Loaded the best model at epoch {early_stopper.best_epoch} for inference')
             netmodel.eval()
             break
         else:
             torch.save(netmodel.state_dict(), get_checkpoint_path(epoch))
+
     if best_epoch != -1:
         netmodel.load_state_dict(early_stopper.best_model_state)
+        logger.info(f'Loaded the best model from epoch {best_epoch} for testing')
     if USE_MEMORY:
         try:
             best_memory_backup = netmodel.memory.backup_memory()
@@ -388,18 +449,24 @@ for i in range(args.n_runs):
             print(f"[Warning] Failed to init memory: {e}")
     # Test phase
     netmodel.embedding_module.neighbor_finder = full_ngh_finder
-    test_ap, test_auc, test_acc, test_f1 = eval_edge_prediction_add_1(
+    test_ap, test_auc, test_acc, test_f1 = edge_prediction_eval1(
         model=netmodel,
         negative_edge_sampler=test_rand_sampler,
         data=test_data,
         n_neighbors=NUM_NEIGHBORS,
     )
+    logger.info(
+    'Test statistics: Old nodes -- auc: {:.4f}, ap: {:.4f}, acc: {:.4f}, f1: {:.4f}'.format(
+        test_auc, test_ap, test_acc, test_f1))
+    logger.info(
+        'Test statistics: New nodes -- auc: {:.4f}, ap: {:.4f}, acc: {:.4f}, f1: {:.4f}'.format(
+            nn_test_auc, nn_test_ap, nn_test_acc, nn_test_f1))
     if USE_MEMORY and best_memory_backup is not None:
         try:
             netmodel.memory.restore_memory(best_memory_backup)
         except Exception as e:
             print(f"[Warning] Failed to restore memory: {e}")
-    nn_test_ap, nn_test_auc, nn_test_acc, nn_test_f1 = eval_edge_prediction_add_1(
+    nn_test_ap, nn_test_auc, nn_test_acc, nn_test_f1 = edge_prediction_eval1(
         model=netmodel,
         negative_edge_sampler=nn_test_rand_sampler,
         data=new_node_test_data,
@@ -419,6 +486,7 @@ for i in range(args.n_runs):
                 },
                 f,
             )
+            logger.info('Saving TGN model')
     except Exception as e:
         print(f"[Warning] Failed to save test results: {e}")
     if USE_MEMORY and best_memory_backup is not None:
@@ -428,5 +496,6 @@ for i in range(args.n_runs):
             print(f"[Warning] Failed to restore memory: {e}")
     try:
         torch.save(netmodel.state_dict(), MODEL_SAVE_PATH)
+        logger.info('TGN model saved')
     except Exception as e:
         print(f"[Warning] Failed to save model: {e}")

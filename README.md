@@ -1,187 +1,156 @@
 
-# DynPerturb: A Dynamic Perturbation Model for Single-Cell Gene Expression Data Analysis
+# DynPerturb：Dynamic Perturbation Modeling for Spatiotemporal Single-Cell Systems
 
-## Project Overview
+## DynPerturb Overview
 DynPerturb is an advanced deep learning model designed to infer gene regulatory networks (GRNs) and analyze the effects of perturbations on cellular states using single-cell RNA-seq data. By incorporating both temporal and spatial information, DynPerturb enhances the understanding of gene interactions during cellular development, disease progression, and response to perturbations, making it an invaluable tool for biologists and researchers in drug discovery, genetic studies, and disease modeling.
 
+<img src="C:\Users\20945\AppData\Roaming\Typora\typora-user-images\image-20250626013529672.png" alt="image-20250626013529672" style="zoom:80%;" />
+
 ## Data
-### GRN Data
+All training data and model parameters used in this study are available at https://bgipan.genomics.cn/#/link/t2YuR3VHmS0Jaozwqlvk (access code: p2Qv).
+
+### Benchmark Data
+
+Benchmark gene pairs for mESC and hESC datasets are avaliable fromhttps://github.com/xiaoyeye/TDL.
+
+### GeneDyn Data
+
 The data for Gene Regulatory Network (GRN) inference comes from the following dataset:
 1. **Adult Human Kidney Single-Cell RNA-seq** (Version 1.5)
    - **Source**: [CellxGene Single-Cell Data](https://cellxgene.cziscience.com/e/dea717d4-7bc0-4e46-950f-fd7e1cc8df7d.cxg/)
-   - **Data Location**: `/home/share/huadjyin/home/s_qinhua2/02code/tgn-master/kidney/data`
-   - Data files: `ml_aPT-A.csv`, `ml_aPT-A.npy`, `ml_aPT-A_node.pkl`, `ml_aPT-B...`, etc.
    - This dataset includes single-cell gene expression profiles from different cell types of the human kidney.
 
-### Cell Development Data
+### CellDyn Data
 1. **Human Bone Marrow Hematopoietic Development** (Balanced Reference Map)
    - **Source**: [CellxGene Bone Marrow Data](https://cellxgene.cziscience.com/e/cd2f23c1-aef1-48ae-8eb4-0bcf124e567d.cxg/)
-   - **Data Location**: `/home/share/huadjyin/home/s_qinhua2/02code/tgn-master/HumanBone/data`
-   - Data files: `ml_HumanBone.csv`, `ml_HumanBone.npy`, `ml_HumanBone_node.pkl`
    - The dataset helps explore the differentiation process of blood cells from human bone marrow.
 
-### Spatial Data
+### SpatialDyn Data
 1. **Murine Cardiac Development Spatiotemporal Transcriptome Sequencing**
    - **Source**: [Gigascience Article](https://doi.org/10.1093/gigascience/giaf012)
-   - **Data Location**: `/home/share/huadjyin/home/s_qinhua2/02code/tgn-master/spatiotemporal_mouse/data`
-   - Data files: `ml_mouse_spatial.csv`, `ml_mouse_spatial.npy`, `ml_mouse_spatial_node.pkl`
    - Provides a detailed spatial transcriptomic map of murine heart development, useful for understanding heart tissue differentiation and development.
 
-## Environment Setup
-### Dependencies
-The environment required for running the model can be easily set up using the provided `environment.yaml` file.
-1. Download the `environment.yaml` file from this repository.
-2. Modify the path in the last line of the file to match your system's conda path.
-3. To install dependencies, run:
+## Requirements
+
+The Python dependencies for this project are listed in the `requirements.txt` file.
+
+1. **Download the `requirements.txt` file** from this repository.
+
+2. **Create a conda environment** (if you don’t have one already):
+
    ```bash
-   conda env create -f environment.yaml
+   conda create --name DynPerturb python=3.x
    ```
-4. Activate the conda environment:
+
+3. **Activate the conda environment**:
+
    ```bash
    conda activate DynPerturb
    ```
 
-## Key Features
-### Gene Regulatory Network (GRN) Inference
-- The model uses advanced machine learning techniques to infer the relationships between genes in the form of a network. 
-- It supports time-series and spatial-temporal data, allowing researchers to uncover gene interactions during development and disease progression.
+4. **Install the dependencies** by running the following command:
 
-### Perturbation Response Analysis
-- DynPerturb can analyze the effect of different perturbations (e.g., drugs, genetic mutations) on gene expression. 
-- It helps predict cellular responses to various conditions, a critical feature for drug discovery and genetic studies.
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-### Data Integration
-- The model can handle data from multiple sources, including time-course, spatial, and developmental datasets, providing a holistic view of gene interactions.
+This will install all the Python dependencies needed for the project.
 
-### Embedding Generation and Saving
-- DynPerturb computes node embeddings for every gene, which can then be saved and used for downstream analyses.
-- This feature enables a more in-depth exploration of gene functions and interactions.
+## Task1 : Transcription factor perturbation reveals dose-, time-, and state-dependent regulatory sensitivity during kidney injury
+**Training Command**
 
-### Visualization and Interpretation
-- The model supports visualization of gene networks and perturbation effects, helping researchers understand complex biological interactions.
-
-## TASK1: Gene Regulatory Network (GRN) Reconstruction and Link Prediction
-
-### STEP1: Input Data Preparation
-
-#### Python script: `train_ChangeNodeFeat_SaveEmbeddings0529_link.py`
-
-Example command line:
+This script is used to train a **self-supervised model** for **link prediction** in graph-based data. The training process is designed to handle large-scale datasets and support **distributed training** using **PyTorch's DistributedDataParallel (DDP)**.
 
 ```bash
-python train_ChangeNodeFeat_SaveEmbeddings0529_link.py --data HumanBone --bs 64 --n_epoch 100 --n_layer 1 --lr 1e-4
+python train_main_link.py -d aPT-B --use_memory --memory_updater rnn  --message_function mlp > log.log 2>&1
+```
+
+- **`--use_memory`**:
+   Enabling this option allows the model to incorporate **memory augmentation** for nodes during training. This can enhance the model's ability to remember historical interactions or patterns in the data, which is particularly useful for temporal graph models.
+- **`--memory_updater rnn`**:
+   This argument specifies the type of memory update mechanism to use. The `rnn` option uses a **Recurrent Neural Network (RNN)** to update and manage node memory over time, making it suitable for tasks that require temporal memory updates.
+- **`--message_function mlp`**:
+   The `mlp` option sets the **message function** used to process information between nodes. Specifically, it utilizes a **Multi-Layer Perceptron (MLP)** to aggregate and transform messages exchanged between nodes during the computation, allowing the model to learn complex relationships between nodes.
+
+**Perturbation and Extraction of Node Features**
+
+This script is designed to perform **perturbation and extraction of node features** in a **link prediction** task. Specifically, it involves the process of generating embeddings for nodes, extracting their features over time, and saving these embeddings for future use.
+
+```bash
+python train_ChangeNodeFeat_SaveEmbeddings_link.py --data HumanBone --bs 64 --n_epoch 100 --n_layer 1 
 ```
 
 **Parameters**:
+
 - `--data`: Dataset name, e.g., "HumanBone".
 - `--bs`: Batch size for training.
 - `--n_epoch`: Number of epochs.
 - `--n_layer`: Number of network layers.
 - `--lr`: Learning rate.
 
-**Task**:
-- This step involves loading the data using the `get_data_link2` function, which loads node features (gene expressions) and edge features (relationships between genes) for link prediction tasks. 
-- Data preprocessing includes selecting and filtering specific gene pairs, normalizing gene expressions, and splitting data into training, validation, and test sets.
-- The feature matrix is then prepared to be passed to the model for training.
 
-### STEP2: Model Training and Evaluation
 
-#### Python script: `train_main_kidney.py`
+## Task2 : Cell-level perturbation reveals lineage-specific regulatory sensitivity during human hematopoiesis.
 
-Example command line:
+**Training Command**
+
+This script is used for **self-supervised node classification** training with **distributed data parallelism (DDP)** using PyTorch. The code supports multi-GPU and multi-node training environments to scale efficiently.
 
 ```bash
-python train_main_kidney.py --data HumanBone --bs 64 --n_epoch 100 --n_layer 1 --lr 3e-4
+python train_main_ddp.py -d HumanBone --memory_dim 1000  --use_memory --numClasses > log.log 2>&1
+```
+
+- **`--memory_dim`**:
+   Sets the dimension of the memory space for the model. The `memory_dim` controls how much memory each node will hold, which can influence model performance.
+
+- **`--use_memory`**:
+   This flag enables the use of **node memory augmentation**, which helps the model retain and utilize information from previous steps or nodes. This is particularly helpful for tasks requiring historical context.
+
+- `--num_classes`:
+
+  This argument specifies the **number of classes** for **node classification** tasks. It defines the total number of distinct categories or labels each node can be classified into during training. This parameter is essential for multi-class classification tasks, where the model predicts the class label for each node in the graph.
+
+**Perturbation and Extraction of Node Features**
+
+This script is designed for **distributed inference** on a temporal graph, focusing on **perturbation and extraction of node features** (i.e. embeddings), using a pretrained model. It computes temporal node embeddings across time and saves them for downstream tasks such as analysis or visualization.
+
+```bash
+python train_ChangeNodeFeat_SaveEmbeddings_ddp.py --data HumanBone --bs 64 --n_epoch 100 --n_layer 1 
 ```
 
 **Parameters**:
-- `--data`: Dataset name, e.g., "HumanBone".
-- `--bs`: Batch size for training.
-- `--n_epoch`: Number of epochs.
-- `--n_layer`: Number of network layers.
-- `--lr`: Learning rate.
 
-**Task**:
-- Initializes the model using the `NetModel` class, which defines a deep learning model for link prediction and node classification tasks.
-- The model is trained using both the node features and edge features. The loss is calculated for link prediction and node classification tasks, and backpropagation is performed to optimize the model parameters.
-- Model performance is evaluated using metrics like AUC (Area Under the Curve), precision, and recall.
-
-### STEP3: Embedding Computation and Saving
-
-**Task**:
-- During training, the model computes node and edge embeddings, which are lower-dimensional representations of genes and gene interactions.
-- The embeddings are saved to a specified directory for further analysis or downstream tasks, such as gene network visualization or perturbation analysis.
-
-## TASK2: Node Classification
-
-### STEP1: Model Setup and Hyperparameter Initialization
-
-#### Python script: `train_ChangeNodeFeat_SaveEmbeddings0521.py`
-
-Example command line:
-
-```bash
-python train_ChangeNodeFeat_SaveEmbeddings0521.py --data HumanBone --bs 64 --n_epoch 100 --n_layer 1 --lr 1e-4
-```
-
-**Parameters**:
 - `--data`: The dataset name, for example, "HumanBone".
 - `--bs`: Batch size used during training.
 - `--n_epoch`: Number of epochs to train the model.
 - `--n_layer`: Number of layers in the neural network.
 - `--lr`: Learning rate for optimization.
 
-**Task**:
-- The first step in node classification is setting up the model and initializing its hyperparameters.
-- The model uses random edge samplers to create negative samples, which helps train the model to distinguish real gene interactions from random pairs.
-- The setup ensures that the model is properly initialized and ready for training on the classification task.
 
-### STEP2: Model Training and Loss Computation
 
-**Task**:
-- The model is trained to classify genes (nodes) based on their interactions. The training involves optimizing the model’s parameters to minimize a loss function, which is a combination of binary cross-entropy loss for link prediction and cross-entropy loss for node classification.
-- Early stopping is used to prevent overfitting and ensure that the model generalizes well to unseen data.
+## Task3 : Spatial perturbation reveals region-specific regulatory sensitivity during heart development
 
-### STEP3: Model Evaluation
-
-#### Python script: `ddpversion.py`
-
-Example command line:
+**Training Command**
 
 ```bash
-python ddpversion.py --data HumanBone --gpu 0 --n_epoch 100 --bs 64 --n_layer 2
+python train_main_ddp.py -d mouse --memory_dim 1000  --use_memory  > log.log 2>&1
+```
+
+**Perturbation and Extraction of Node Features**
+
+```bash
+python train_ChangeNodeFeat_SaveEmbeddings_ddp.py --data mouse --bs 64 --n_epoch 100 --n_layer 1 
 ```
 
 **Parameters**:
-- `--data`: Dataset name to evaluate.
-- `--gpu`: The GPU index to use.
-- `--n_epoch`: Number of epochs for evaluation.
-- `--bs`: Batch size for evaluation.
-- `--n_layer`: Number of layers in the model.
 
-**Task**:
-- After training, the model's performance is evaluated using the test set. Evaluation metrics such as AUC, precision, recall, and F1-score are computed for link prediction and node classification tasks.
-- Confusion matrices are generated to show how well the model distinguishes between different classes of genes (nodes).
+- `--data`: The dataset name, for example, "HumanBone".
+- `--bs`: Batch size used during training.
+- `--n_epoch`: Number of epochs to train the model.
+- `--n_layer`: Number of layers in the neural network.
+- `--lr`: Learning rate for optimization.
 
-## TASK3: Temporal Modeling and Node Memory Augmentation
 
-### STEP1: Memory Initialization
-
-**Task**:
-- If enabled, memory augmentation helps the model remember previous states across time steps. This memory mechanism improves the model’s ability to learn from temporal data, such as time-course RNA-seq data.
-- This step initializes the memory network, which stores important gene interactions over time.
-
-### STEP2: Temporal Encoding and Computation
-
-**Task**:
-- The model computes temporal embeddings for each gene, which helps capture time-dependent relationships between genes.
-- Temporal embeddings are used to represent how gene interactions evolve over time, which is particularly useful for time-series data.
-
-### STEP3: Final Model Evaluation and Embedding Saving
-
-**Task**:
-- After training, the model’s final performance is evaluated and the learned node and edge embeddings are saved.
-- These embeddings are used to study gene interactions and can be further analyzed for tasks like gene prioritization, regulatory network analysis, or perturbation prediction.
 
 ## License
 

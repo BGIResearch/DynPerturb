@@ -247,9 +247,9 @@ class SequenceMemoryUpdater(MemoryUpdater):
 
 
 class GRUMemoryUpdater(SequenceMemoryUpdater):
-    def __init__(self, memory, message_dimension, memory_dimension, device):
+    def __init__(self, memory, message_dimension, memory_dimension, device,mode):
         super(GRUMemoryUpdater, self).__init__(
-            memory, message_dimension, memory_dimension, device
+            memory, message_dimension, memory_dimension, device,mode
         )
 
         self.memory_updater = nn.GRUCell(
@@ -258,9 +258,9 @@ class GRUMemoryUpdater(SequenceMemoryUpdater):
 
 
 class RNNMemoryUpdater(SequenceMemoryUpdater):
-    def __init__(self, memory, message_dimension, memory_dimension, device):
+    def __init__(self, memory, message_dimension, memory_dimension, device,mode):
         super(RNNMemoryUpdater, self).__init__(
-            memory, message_dimension, memory_dimension, device
+            memory, message_dimension, memory_dimension, device,mode
         )
 
         self.memory_updater = nn.RNNCell(
@@ -269,9 +269,9 @@ class RNNMemoryUpdater(SequenceMemoryUpdater):
 
 
 class LSTMMemoryUpdater(SequenceMemoryUpdater):
-    def __init__(self, memory, message_dimension, memory_dimension, device):
+    def __init__(self, memory, message_dimension, memory_dimension, device,mode):
         super(LSTMMemoryUpdater, self).__init__(
-            memory, message_dimension, memory_dimension, device
+            memory, message_dimension, memory_dimension, device,mode
         )
         self.memory_updater = nn.LSTMCell(
             input_size=message_dimension, hidden_size=memory_dimension
@@ -332,7 +332,7 @@ def get_memory_updater(
     message_dimension,
     memory_dimension,
     device,
-    mode="link_prediction",
+    mode="link_prediction"
 ):
     if module_type == "gru":
         return GRUMemoryUpdater(

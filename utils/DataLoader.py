@@ -59,158 +59,24 @@ class Data:
 #   return full_data, node_features, edge_features, train_data, val_data, test_data
 
 
-def get_data_ddp1(
-    dataset_name,
-    different_new_nodes_between_val_and_test=False,
-    randomize_features=False,
-    use_validation=False,
-):
-    ### 1️⃣ **加载数据并按时间戳升序排序**
-    graph_df = pd.read_csv(f"./data/ml_{dataset_name}.csv")
-    edge_features = np.load(f"./data/ml_{dataset_name}.npy")
-
-    # 读取 `node_features`
-    with open(f"./data/ml_{dataset_name}_node.pkl", "rb") as f:
-        node_features = pickle.load(f)
-
-    # **按时间戳升序排序**
-    sorted_indices = np.argsort(graph_df.ts.values)
-    graph_df = graph_df.iloc[sorted_indices].reset_index(drop=True)
-    edge_features = edge_features[sorted_indices]
-
-    # **随机初始化节点特征（可选）**
-    if randomize_features:
-        node_features = np.random.rand(node_features.shape[0], node_features.shape[1])
-
-    # 提取字段
-    sources = graph_df.u.values
-    destinations = graph_df.i.values
-    edge_idxs = graph_df.idx.values - 1
-    labels = graph_df.label.values
-    timestamps = graph_df.ts.values
-
-    # **计算训练集、验证集、测试集的分割时间戳**
-    val_time, test_time = np.quantile(graph_df.ts, [0.70, 0.85])
-
-    full_data = Data(sources, destinations, timestamps, edge_idxs, labels)
-
-    random.seed(2020)
-    node_set = set(sources) | set(destinations)
-    n_total_unique_nodes = len(node_set)
-
-    # **计算测试集中新节点**
-    test_node_set = set(sources[timestamps > val_time]).union(
-        set(destinations[timestamps > val_time])
-    )
-    num_sample = int(0.1 * n_total_unique_nodes)
-    num_sample = min(num_sample, len(test_node_set))  # 防止超出 test_node_set 大小
-
-    if num_sample > 0:
-        new_test_node_set = set(random.sample(test_node_set, num_sample))
-    else:
-        new_test_node_set = set()
-
-    # new_test_node_set = set(random.sample(test_node_set, int(0.1 * n_total_unique_nodes)))
-
-    # **为每个源和目标节点创建是否为新测试节点的标记**
-    new_test_source_mask = graph_df.u.map(lambda x: x in new_test_node_set).values
-    new_test_destination_mask = graph_df.i.map(lambda x: x in new_test_node_set).values
-    observed_edges_mask = np.logical_and(
-        ~new_test_source_mask, ~new_test_destination_mask
-    )
-
-    # **划分训练集**
-    train_mask = np.logical_and(timestamps <= val_time, observed_edges_mask)
-
-    train_data = Data(
-        sources[train_mask],
-        destinations[train_mask],
-        timestamps[train_mask],
-        edge_idxs[train_mask],
-        labels[train_mask],
-    )
-
-    # **为验证集和测试集创建数据**
-    val_mask = (timestamps <= test_time) & (timestamps > val_time)
-    test_mask = timestamps > test_time
-
-    # **为新节点创建验证集和测试集**
-    edge_contains_new_node_mask = np.array(
-        [
-            (a in new_test_node_set or b in new_test_node_set)
-            for a, b in zip(sources, destinations)
-        ]
-    )
-    new_node_val_mask = np.logical_and(val_mask, edge_contains_new_node_mask)
-    new_node_test_mask = np.logical_and(test_mask, edge_contains_new_node_mask)
-
-    val_data = Data(
-        sources[val_mask],
-        destinations[val_mask],
-        timestamps[val_mask],
-        edge_idxs[val_mask],
-        labels[val_mask],
-    )
-
-    test_data = Data(
-        sources[test_mask],
-        destinations[test_mask],
-        timestamps[test_mask],
-        edge_idxs[test_mask],
-        labels[test_mask],
-    )
-
-    new_node_val_data = Data(
-        sources[new_node_val_mask],
-        destinations[new_node_val_mask],
-        timestamps[new_node_val_mask],
-        edge_idxs[new_node_val_mask],
-        labels[new_node_val_mask],
-    )
-
-    new_node_test_data = Data(
-        sources[new_node_test_mask],
-        destinations[new_node_test_mask],
-        timestamps[new_node_test_mask],
-        edge_idxs[new_node_test_mask],
-        labels[new_node_test_mask],
-    )
-
-    print(f"📊 数据统计：")
-
-    print(
-        f" - 训练集: {train_data.n_interactions} 交互, {train_data.n_unique_nodes} 个节点"
-    )
-    print(
-        f" - 验证集: {val_data.n_interactions} 交互, {val_data.n_unique_nodes} 个节点"
-    )
-    print(
-        f" - 测试集: {test_data.n_interactions} 交互, {test_data.n_unique_nodes} 个节点"
-    )
-
-    # return node_features, edge_features, full_data, train_data, val_data, test_data, new_node_val_data, new_node_test_data
-    return (
-        full_data,
-        node_features,
-        edge_features,
-        train_data,
-        val_data,
-        test_data,
-        new_node_val_data,
-        new_node_test_data,
-    )
 
 
-def get_data_ddp2(
+def get_data_ddp(
     dataset_name,
     different_new_nodes_between_val_and_test=False,
     randomize_features=False,
     use_validation=False,
 ):
     # 1. 加载数据
-    graph_df = pd.read_csv(f"./data/ml_{dataset_name}.csv")
-    edge_features = np.load(f"./data/ml_{dataset_name}.npy")
-    with open(f"./data/ml_{dataset_name}_node.pkl", "rb") as f:
+    # graph_df = pd.read_csv(f"./data/ml_{dataset_name}.csv")
+    # edge_features = np.load(f"./data/ml_{dataset_name}.npy")
+    # with open(f"./data/ml_{dataset_name}_node.pkl", "rb") as f:
+    graph_df = pd.read_csv(r"/home/share/huadjyin/home/s_qinhua2/02code/tgn-master/spatiotemporal_mouse/data/ml_mouse_25_spatial.csv")
+    #edge_features = np.load(f"./data/ml_{dataset_name}.npy")
+    edge_features = np.load(r"/home/share/huadjyin/home/s_qinhua2/02code/tgn-master/spatiotemporal_mouse/data/ml_mouse_25_spatial.npy")
+    # 读取 `node_features`
+    #with open(f"./data/ml_{dataset_name}_node.pkl", "rb") as f:
+    with open(r"/home/share/huadjyin/home/s_qinhua2/02code/tgn-master/spatiotemporal_mouse/data/ml_mouse_25_spatial_node.pkl", "rb") as f:
         node_features = pickle.load(f)
 
     # 2. 排序
@@ -339,9 +205,12 @@ def get_data_link2(
     use_validation=False,
 ):
     # 1. 加载数据
-    graph_df = pd.read_csv(f"./data/ml_{dataset_name}.csv")
-    edge_features = np.load(f"./data/ml_{dataset_name}.npy")
-    with open(f"./data/ml_{dataset_name}_node.pkl", "rb") as f:
+    # graph_df = pd.read_csv(f"./data/ml_{dataset_name}.csv")
+    # edge_features = np.load(f"./data/ml_{dataset_name}.npy")
+    # with open(f"./data/ml_{dataset_name}_node.pkl", "rb") as f:
+    graph_df = pd.read_csv(r"/home/share/huadjyin/home/s_qinhua2/02code/tgn-master/kidney/data/ml_aPT-B_3.csv")
+    edge_features = np.load(r"/home/share/huadjyin/home/s_qinhua2/02code/tgn-master/kidney/data/ml_aPT-B_3.npy")
+    with open(r"/home/share/huadjyin/home/s_qinhua2/02code/tgn-master/kidney/data/ml_aPT-B_3_node.pkl", "rb") as f:
         node_features = pickle.load(f)
 
     # 2. 排序
@@ -473,9 +342,12 @@ def get_data_link1(
 ):
 
     # 1️⃣ 加载并排序
-    graph_df = pd.read_csv(f"./data/ml_{dataset_name}.csv")
-    edge_features = np.load(f"./data/ml_{dataset_name}.npy")
-    with open(f"./data/ml_{dataset_name}_node.pkl", "rb") as f:
+    # graph_df = pd.read_csv(f"./data/ml_{dataset_name}.csv")
+    # edge_features = np.load(f"./data/ml_{dataset_name}.npy")
+    # with open(f"./data/ml_{dataset_name}_node.pkl", "rb") as f:
+    graph_df = pd.read_csv(r"/home/share/huadjyin/home/s_qinhua2/02code/tgn-master/kidney/data/ml_aPT-B_3.csv")
+    edge_features = np.load(r"/home/share/huadjyin/home/s_qinhua2/02code/tgn-master/kidney/data/ml_aPT-B_3.npy")
+    with open(r"/home/share/huadjyin/home/s_qinhua2/02code/tgn-master/kidney/data/ml_aPT-B_3_node.pkl", "rb") as f:
         node_features = pickle.load(f)
 
     sorted_indices = np.argsort(graph_df.ts.values)

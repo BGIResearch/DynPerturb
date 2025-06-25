@@ -121,12 +121,13 @@ class NetModel(torch.nn.Module):
                 mode = self.mode
             )
             self.message_aggregator = get_message_aggregator(
-                aggregator_type=aggregator_type, device=device
+                aggregator_type=aggregator_type,
+                device = device
             )
             self.message_function = get_message_function(
                 module_type=message_function,
                 raw_message_dimension=raw_message_dimension,
-                message_dimension=message_dimension,
+                message_dimension=message_dimension
             )
             self.memory_updater = get_memory_updater(
                 module_type=memory_updater_type,
@@ -163,7 +164,7 @@ class NetModel(torch.nn.Module):
         if self.mode == "node_classification":
             # 使用 MLP 作为节点分类解码器
             self.node_classification_decoder = MLP(
-                memory_dimension, num_classes, dropout
+                device,memory_dimension, num_classes, dropout
             )
 
         # MergeLayer for link prediction

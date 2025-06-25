@@ -19,14 +19,21 @@ class MergeLayer(torch.nn.Module):
 
 
 class MLP(torch.nn.Module):
-    def __init__(self, dim, num_classes=None, drop=0.3):
+    def __init__(self,device, dim, num_classes=None, drop=0.3):
         super().__init__()
-        self.fc_1 = torch.nn.Linear(dim, 80)  # 输入到隐藏层
+        self.device = device
+        print("num:",num_classes)
+        print(f"Using device: {device}")
+        self.fc_1 = torch.nn.Linear(dim, 80) # 输入到隐藏层
         self.fc_2 = torch.nn.Linear(80, 10)  # 隐藏层到第二层
         self.fc_3 = torch.nn.Linear(10, num_classes)  # 输出层，输出 num_classes 个类别
         self.act = torch.nn.ReLU()  # 激活函数
         self.dropout = torch.nn.Dropout(p=drop, inplace=False)  # Dropout 层
-
+        # 如果 device 不为 None，则把所有模块移到指定 device 上
+        # if self.device is not None:
+        #     self.to(self.device)
+        
+        
     def forward(self, x):
         x = self.act(self.fc_1(x))  # 激活第一个隐藏层
         x = self.dropout(x)  # 应用 Dropout
@@ -111,6 +118,35 @@ class EarlyStopMonitor(object):
         self.epoch_count += 1
         # 如果等待轮次大于最大轮次，则触发早停
         return self.num_round >= self.max_round
+class EarlyStopMonitor_ddp(object):
+  def __init__(self, max_round=3, higher_better=True, tolerance=1e-10):
+    self.max_round = max_round
+    self.num_round = 0
+
+    self.epoch_count = 0
+    self.best_epoch = 0
+    self.best_model_state = None
+
+
+    self.last_best = None
+    self.higher_better = higher_better
+    self.tolerance = tolerance
+
+  def early_stop_check(self, curr_val):
+    if not self.higher_better:
+      curr_val *= -1
+    if self.last_best is None:
+      self.last_best = curr_val
+    elif (curr_val - self.last_best) / np.abs(self.last_best) > self.tolerance:
+      self.last_best = curr_val
+      self.num_round = 0
+      self.best_epoch = self.epoch_count
+    else:
+      self.num_round += 1
+
+    self.epoch_count += 1
+
+    return self.num_round >= self.max_round
 
 
 import torch
@@ -157,23 +193,7 @@ def get_neighbor_finder(data, uniform, max_node_idx=None):
     return NeighborFinder(adj_list, uniform=uniform)
 
 
-def get_neighbor_finder(data, uniform, max_node_idx=None):
 
-    max_node_idx = (
-        max(data.sources.max(), data.destinations.max())
-        if max_node_idx is None
-        else max_node_idx
-    )
-    adj_list = [[] for _ in range(max_node_idx + 1)]
-    for source, destination, edge_idx, timestamp in zip(
-        data.sources, data.destinations, data.edge_idxs, data.timestamps
-    ):
-        # source = int(source)
-        # destination = int(destination)
-        adj_list[source].append((destination, edge_idx, timestamp))
-        adj_list[destination].append((source, edge_idx, timestamp))
-
-    return NeighborFinder(adj_list, uniform=uniform)
 
 
 class NeighborFinder:

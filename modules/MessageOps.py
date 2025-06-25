@@ -1,76 +1,133 @@
-# Message function using a two-layer MLP
-class MLPMessageFunction:
-    def __init__(self, raw_message_dim, hidden_dim, device):
-        import torch.nn as nn
-
-        self.linear1 = nn.Linear(raw_message_dim, hidden_dim)
-        self.linear2 = nn.Linear(hidden_dim, hidden_dim)
-        self.relu = nn.ReLU()
-        self.device = device
-
-    def __call__(self, raw_messages):
-
-        # Pass raw messages through MLP
-        return self.linear2(self.relu(self.linear1(raw_messages)))
+from collections import defaultdict
+import torch
+import numpy as np
 
 
-# Message function that returns the input as is
-class IdentityMessageFunction:
-    def __init__(self, raw_message_dim, hidden_dim, device):
-        pass
+class MessageAggregator(torch.nn.Module):
+  """
+  Abstract class for the message aggregator module, which given a batch of node ids and
+  corresponding messages, aggregates messages with the same node id.
+  """
+  def __init__(self, device):
+    super(MessageAggregator, self).__init__()
+    self.device = device
 
-    def __call__(self, raw_messages):
-        # No transformation
-        return raw_messages
-
-
-# Factory for message function
-
-
-def get_message_function(module_type, raw_message_dim, hidden_dim, device):
+  def aggregate(self, node_ids, messages):
     """
-    Returns a message function instance based on the type.
+    Given a list of node ids, and a list of messages of the same length, aggregate different
+    messages for the same id using one of the possible strategies.
+    :param node_ids: A list of node ids of length batch_size
+    :param messages: A tensor of shape [batch_size, message_length]
+    :param timestamps A tensor of shape [batch_size]
+    :return: A tensor of shape [n_unique_node_ids, message_length] with the aggregated messages
     """
-    if module_type == "mlp":
-        return MLPMessageFunction(raw_message_dim, hidden_dim, device)
-    elif module_type == "identity":
-        return IdentityMessageFunction(raw_message_dim, hidden_dim, device)
-    else:
-        raise ValueError(f"Unknown message function type: {module_type}")
+
+  def group_by_id(self, node_ids, messages, timestamps):
+    node_id_to_messages = defaultdict(list)
+
+    for i, node_id in enumerate(node_ids):
+      node_id_to_messages[node_id].append((messages[i], timestamps[i]))
+
+    return node_id_to_messages
 
 
-# Aggregator that returns the last message
-class LastMessageAggregator:
-    def __init__(self):
-        pass
+class LastMessageAggregator(MessageAggregator):
+  def __init__(self, device):
+    super(LastMessageAggregator, self).__init__(device)
 
-    def aggregate(self, messages):
-        # Return the last message in the list
-        return messages[-1]
+  def aggregate(self, node_ids, messages):
+    """Only keep the last message for each node"""    
+    unique_node_ids = np.unique(node_ids)
+    unique_messages = []
+    unique_timestamps = []
+    
+    to_update_node_ids = []
+    
+    for node_id in unique_node_ids:
+        if len(messages[node_id]) > 0:
+            to_update_node_ids.append(node_id)
+            unique_messages.append(messages[node_id][-1][0])
+            unique_timestamps.append(messages[node_id][-1][1])
+    
+    unique_messages = torch.stack(unique_messages) if len(to_update_node_ids) > 0 else []
+    unique_timestamps = torch.stack(unique_timestamps) if len(to_update_node_ids) > 0 else []
+
+    return to_update_node_ids, unique_messages, unique_timestamps
 
 
-# Aggregator that computes the mean of messages
-class MeanMessageAggregator:
-    def __init__(self):
-        import torch
+class MeanMessageAggregator(MessageAggregator):
+  def __init__(self, device):
+    super(MeanMessageAggregator, self).__init__(device)
 
-        self.torch = torch
+  def aggregate(self, node_ids, messages):
+    """Only keep the last message for each node"""
+    unique_node_ids = np.unique(node_ids)
+    unique_messages = []
+    unique_timestamps = []
 
-    def aggregate(self, messages):
-        # Compute mean along the first dimension
-        return self.torch.mean(messages, dim=0)
+    to_update_node_ids = []
+    n_messages = 0
+
+    for node_id in unique_node_ids:
+      if len(messages[node_id]) > 0:
+        n_messages += len(messages[node_id])
+        to_update_node_ids.append(node_id)
+        unique_messages.append(torch.mean(torch.stack([m[0] for m in messages[node_id]]), dim=0))
+        unique_timestamps.append(messages[node_id][-1][1])
+
+    unique_messages = torch.stack(unique_messages) if len(to_update_node_ids) > 0 else []
+    unique_timestamps = torch.stack(unique_timestamps) if len(to_update_node_ids) > 0 else []
+
+    return to_update_node_ids, unique_messages, unique_timestamps
 
 
-# Factory for message aggregator
+def get_message_aggregator(aggregator_type, device):
+  if aggregator_type == "last":
+    return LastMessageAggregator(device=device)
+  elif aggregator_type == "mean":
+    return MeanMessageAggregator(device=device)
+  else:
+    raise ValueError("Message aggregator {} not implemented".format(aggregator_type))
+
+from torch import nn
 
 
-def get_message_aggregator(aggregator_type):
-    """
-    Returns a message aggregator instance based on the type.
-    """
-    if aggregator_type == "last":
-        return LastMessageAggregator()
-    elif aggregator_type == "mean":
-        return MeanMessageAggregator()
-    else:
-        raise ValueError(f"Unknown message aggregator type: {aggregator_type}")
+class MessageFunction(nn.Module):
+  """
+  Module which computes the message for a given interaction.
+  """
+
+  def compute_message(self, raw_messages):
+    return None
+
+
+class MLPMessageFunction(MessageFunction):
+  def __init__(self, raw_message_dimension, message_dimension):
+    super(MLPMessageFunction, self).__init__()
+
+    self.mlp = self.layers = nn.Sequential(
+      nn.Linear(raw_message_dimension, raw_message_dimension // 2),
+      nn.ReLU(),
+      nn.Linear(raw_message_dimension // 2, message_dimension),
+    )
+
+  def compute_message(self, raw_messages):
+    messages = self.mlp(raw_messages)
+
+    return messages
+
+
+class IdentityMessageFunction(MessageFunction):
+
+  def compute_message(self, raw_messages):
+
+    return raw_messages
+
+
+def get_message_function(module_type, raw_message_dimension, message_dimension):
+  if module_type == "mlp":
+    return MLPMessageFunction(raw_message_dimension, message_dimension)
+  elif module_type == "identity":
+    return IdentityMessageFunction()
+
+
