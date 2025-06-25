@@ -4,7 +4,7 @@
 ## DynPerturb Overview
 DynPerturb is an advanced deep learning model designed to infer gene regulatory networks (GRNs) and analyze the effects of perturbations on cellular states using single-cell RNA-seq data. By incorporating both temporal and spatial information, DynPerturb enhances the understanding of gene interactions during cellular development, disease progression, and response to perturbations, making it an invaluable tool for biologists and researchers in drug discovery, genetic studies, and disease modeling.
 
-![image-20250626030846102](\fig1.png)
+![image-20250626030846102](.\fig1.png)
 
 ## Data
 All training data and model parameters used in this study are available at https://bgipan.genomics.cn/#/link/t2YuR3VHmS0Jaozwqlvk (access code: p2Qv).
