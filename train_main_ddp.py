@@ -1,14 +1,10 @@
 from evaluation.evaluation import (
     node_classification_eval,
-    edge_prediction_eval2,
+    edge_prediction_eval_transductive,
 )
-
 from model.NetModel import NetModel
-
-from utils.DataLoader import get_data_ddp, compute_time_statistics
-
+from utils.DataLoader import get_data, compute_time_statistics
 from utils.utils import EarlyStopMonitor_ddp, RandEdgeSampler, get_neighbor_finder
-
 import logging
 import math
 import time
@@ -18,7 +14,6 @@ import argparse
 from pathlib import Path
 import torch
 import numpy as np
-
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import DataLoader
@@ -27,7 +22,6 @@ from torch.utils.data.distributed import DistributedSampler
 from sklearn.metrics import confusion_matrix
 import seaborn as sns
 import os
-import logging
 
 # Set random seeds for reproducibility
 random.seed(0)
@@ -35,7 +29,6 @@ np.random.seed(0)
 torch.manual_seed(0)
 
 # Set working directory (use relative path or comment out if not needed)
-
 os.chdir("./")  # Use project root as working directory. Adjust if needed.
 
 # Argument parser for command-line options
@@ -153,6 +146,7 @@ parser.add_argument(
     help="Use validation set",
 )
 parser.add_argument("--new_node", action="store_true", help="Model new node")
+parser.add_argument("--num_classes", type=int, default=8, help="Number of classes")
 
 try:
     args = parser.parse_args()
@@ -181,7 +175,7 @@ USE_MEMORY = args.use_memory
 MESSAGE_DIM = args.message_dim
 MEMORY_DIM = args.memory_dim
 MODE = "node_classification"
-NUM_CLASSES = 3
+NUM_CLASSES = args.num_classes
 
 # Create directories for saving models and checkpoints
 Path("./saved_models/").mkdir(parents=True, exist_ok=True)
@@ -201,39 +195,21 @@ def get_checkpoint_path(epoch):
 output_dir = "./figs"
 os.makedirs(output_dir, exist_ok=True)
 
-### set up logger
-# Initialize logger
-log_dir = '/home/share/huadjyin/home/s_qinhua2/02code/guozhihan/DynPertub/log/ddp1_log'
-# Path(log_dir).mkdir(parents=True, exist_ok=True)
-
-# logging.basicConfig(
-#     level=logging.INFO,  # Set log level to INFO
-#     format="%(asctime)s - %(levelname)s - %(message)s",
-#     handlers=[
-#         logging.FileHandler(os.path.join(log_dir, "train_log.txt")),  # Log to file
-#         logging.StreamHandler()  # Log to console
-#     ]
-# )
-
-### set up logger
+# Set up logger
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
 logger.setLevel(logging.DEBUG)
-fh = logging.FileHandler('/home/share/huadjyin/home/s_qinhua2/02code/guozhihan/DynPertub/log/ddp1_log/{}.log'.format(str(time.time())))
+fh = logging.FileHandler("./ddp1_log/{}.log".format(str(time.time())))
 fh.setLevel(logging.DEBUG)
 ch = logging.StreamHandler()
 ch.setLevel(logging.WARN)
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 fh.setFormatter(formatter)
 ch.setFormatter(formatter)
 logger.addHandler(fh)
 logger.addHandler(ch)
 logger.info(args)
 logging.info("Logger initialized.")
-
-
-
-
 
 num_classes = NUM_CLASSES
 
@@ -247,22 +223,16 @@ num_classes = NUM_CLASSES
     test_data,
     new_node_val_data,
     new_node_test_data,
-) = get_data_ddp(DATA, use_validation=args.use_validation)
+) = get_data(DATA, use_ddp=True, use_validation=args.use_validation)
 
 max_idx = int(max(full_data.unique_nodes))
-
-#num_classes=np.unique(train_data.labels)#我后面加的
-
-
 
 # Initialize neighbor finders
 train_ngh_finder = get_neighbor_finder(
     train_data, uniform=UNIFORM, max_node_idx=max_idx
 )
-
-# 这里也要加 max_node_idx=max_idx，确保类型一致，避免 float64 报错
+# Also add max_node_idx=max_idx here to ensure type consistency and avoid float64 errors
 full_ngh_finder = get_neighbor_finder(full_data, args.uniform, max_node_idx=max_idx)
-
 
 # Initialize negative edge samplers
 train_rand_sampler = RandEdgeSampler(train_data.sources, train_data.destinations)
@@ -278,7 +248,6 @@ nn_test_rand_sampler = RandEdgeSampler(
 # Set device for training
 device_string = "cuda:{}".format(GPU) if torch.cuda.is_available() else "cpu"
 device = torch.device(device_string)
-
 
 # Compute time statistics for temporal encoding
 mean_time_shift_src, std_time_shift_src, mean_time_shift_dst, std_time_shift_dst = (
@@ -298,8 +267,7 @@ for i in range(args.n_runs):
     # Set current process GPU
     torch.cuda.set_device(local_rank)
     device = torch.device("cuda", local_rank)
-    
-    
+
     # Initialize distributed process group
     dist.init_process_group(backend="nccl", init_method="env://")
     rank = dist.get_rank()
@@ -416,22 +384,29 @@ for i in range(args.n_runs):
                 continue
 
             optimizer.zero_grad()
-            
+
             try:
                 # Convert numpy arrays to torch tensors of dtype long
                 sources_batch = torch.tensor(sources_batch, dtype=torch.long).to(device)
-                destinations_batch = torch.tensor(dest_batch, dtype=torch.long).to(device)
-                negatives_batch = torch.tensor(negatives_batch, dtype=torch.long).to(device)
-                edge_idxs_batch = torch.tensor(edge_idxs_batch, dtype=torch.long).to(device)
-
-    # For timestamps, float type is okay as they represent time
-                timestamps_batch = torch.tensor(timestamps_batch, dtype=torch.float32).to(device)
+                destinations_batch = torch.tensor(dest_batch, dtype=torch.long).to(
+                    device
+                )
+                negatives_batch = torch.tensor(negatives_batch, dtype=torch.long).to(
+                    device
+                )
+                edge_idxs_batch = torch.tensor(edge_idxs_batch, dtype=torch.long).to(
+                    device
+                )
+                # For timestamps, float type is okay as they represent time
+                timestamps_batch = torch.tensor(
+                    timestamps_batch, dtype=torch.float32
+                ).to(device)
                 pos_score, neg_score, node_classification_logits = netmodel(
                     sources_batch,
                     destinations_batch,
                     negatives_batch,
                     timestamps_batch,
-                    edge_idxs_batch
+                    edge_idxs_batch,
                 )
             except Exception as e:
                 print(f"Error in model forward: {e}")
@@ -474,11 +449,16 @@ for i in range(args.n_runs):
             avg_loss = loss_tensor / dist.get_world_size()
 
             m_loss.append(avg_loss.item())
-            
-        logger.info(f"Epoch {epoch + 1}/{args.n_epoch} - Average Train Loss: {train_losses[-1]:.4f}")
+
+        logging.info(f"Epoch {epoch + 1}/{args.n_epoch}")
+        logging.info(
+            f"Training Loss: {np.mean(m_loss):.4f} (Epoch Time: {time.time() - start_epoch:.2f}s)"
+        )
         train_losses.append(np.mean(m_loss))
         print(f"Epoch {epoch + 1}/{args.n_epoch}")
-        print(f"Training Loss: {np.mean(m_loss):.4f} (Epoch Time: {time.time() - start_epoch:.2f}s)")
+        print(
+            f"Training Loss: {np.mean(m_loss):.4f} (Epoch Time: {time.time() - start_epoch:.2f}s)"
+        )
 
         if USE_MEMORY:
             try:
@@ -504,7 +484,7 @@ for i in range(args.n_runs):
             val_recall_link_prediction,
             val_f1_link_prediction,
             val_acc_link_prediction,
-        ) = edge_prediction_eval2(
+        ) = edge_prediction_eval_transductive(
             netmodel,
             val_rand_sampler,
             val_data,
@@ -529,10 +509,13 @@ for i in range(args.n_runs):
             NUM_NEIGHBORS,
             num_classes,
         )
-        logger.info(f"[Epoch {epoch + 1}] Val Link Prediction AUC: {val_auc_link_prediction:.4f}")
+        logger.info(
+            f"[Epoch {epoch + 1}] Val Link Prediction AUC: {val_auc_link_prediction:.4f}"
+        )
         for i in range(len(val_auc_node_classification)):
             logger.info(
-                f"[Epoch {epoch + 1}] Class {i} - AUC: {val_auc_node_classification[i]:.4f}, Precision: {precision[i]:.4f}, Recall: {recall[i]:.4f}, F1: {f1[i]:.4f}, Support: {support[i]:.4f}")
+                f"[Epoch {epoch + 1}] Class {i} - AUC: {val_auc_node_classification[i]:.4f}, Precision: {precision[i]:.4f}, Recall: {recall[i]:.4f}, F1: {f1[i]:.4f}, Support: {support[i]:.4f}"
+            )
         if USE_MEMORY:
             try:
                 val_memory_backup = netmodel.module.memory.backup_memory()
@@ -548,7 +531,7 @@ for i in range(args.n_runs):
             nn_val_recall,
             nn_val_f1,
             nn_val_acc,
-        ) = edge_prediction_eval2(
+        ) = edge_prediction_eval_transductive(
             model=netmodel,
             negative_edge_sampler=val_rand_sampler,
             data=new_node_val_data,
@@ -582,10 +565,13 @@ for i in range(args.n_runs):
                 torch.save(netmodel.module.state_dict(), get_checkpoint_path(epoch))
             except Exception as e:
                 print(f"Error saving model: {e}")
-            logger.info(f"✅ Best model saved at epoch {epoch + 1} with Combined AUC: {best_combined_auc:.4f}")
+            logger.info(
+                f" Best model saved at epoch {epoch + 1} with Combined AUC: {best_combined_auc:.4f}"
+            )
             logger.info(f"   ↳ Link Prediction AUC: {val_auc_link_prediction:.4f}")
-            # logger.info(f"   ↳ Node Classification Auc (Mean): {val_auc_node_classification_mean:.4f}")
-            logger.info(f"   ↳ Node Classification F1 (Mean): {val_f1_node_classification_mean:.4f}")
+            logger.info(
+                f"   ↳ Node Classification F1 (Mean): {val_f1_node_classification_mean:.4f}"
+            )
 
     if dist.get_rank() == 0:
         try:
@@ -629,7 +615,7 @@ for i in range(args.n_runs):
         test_recall_link_prediction,
         test_f1_link_prediction,
         test_acc_link_prediction,
-    ) = eval_edge_prediction_add_ddp_new(
+    ) = edge_prediction_eval_transductive(
         netmodel, test_rand_sampler, test_data, NUM_NEIGHBORS, BATCH_SIZE
     )
 
@@ -641,7 +627,7 @@ for i in range(args.n_runs):
         support,
         pred_prob,
         true_labels,
-    ) = eval_node_classification_ddp_new(
+    ) = node_classification_eval(
         netmodel, test_data, full_data.edge_idxs, BATCH_SIZE, NUM_NEIGHBORS, num_classes
     )
 
@@ -660,7 +646,7 @@ for i in range(args.n_runs):
         nn_test_recall,
         nn_test_f1,
         nn_test_acc,
-    ) = edge_prediction_eval2(
+    ) = edge_prediction_eval_transductive(
         model=netmodel,
         negative_edge_sampler=nn_test_rand_sampler,
         data=new_node_test_data,
@@ -745,15 +731,15 @@ for i in range(args.n_runs):
             pass
     except Exception as e:
         print(f"[Warning] Plotting failed: {e}")
-    logger.info(f'Test Link Prediction AUC: {test_auc_link_prediction}')
-    logger.info(f'Test Node Classification AUC: {test_auc_node_classification}')
-    logger.info('Saving TGN model')
+    logger.info(f"Test Link Prediction AUC: {test_auc_link_prediction}")
+    logger.info(f"Test Node Classification AUC: {test_auc_node_classification}")
+    logger.info("Saving TGN model")
     # Restore memory again if enabled
     if USE_MEMORY:
         try:
             netmodel.module.memory.restore_memory(val_memory_backup)
         except Exception as e:
             print(f"[Warning] Failed to restore memory: {e}")
-        logger.info('TGN model saved')
+        logger.info("TGN model saved")
 
     torch.save(netmodel.module.state_dict(), MODEL_SAVE_PATH)

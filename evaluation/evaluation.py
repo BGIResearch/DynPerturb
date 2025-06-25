@@ -11,11 +11,11 @@ import torch.distributed as dist
 import math
 
 
-def edge_prediction_eval1(
+def edge_prediction_eval_inductive(
     model, negative_edge_sampler, data, n_neighbors, batch_size=200
 ):
     """
-    Evaluate edge prediction (binary classification) for a batch of edges.
+    Evaluate edge prediction (binary classification) for a batch of edges (inductive setting).
     Returns average precision, AUC, accuracy, and F1 score.
     """
     assert negative_edge_sampler.seed is not None  # Ensure sampler is seeded
@@ -30,7 +30,7 @@ def edge_prediction_eval1(
         num_test_batch = math.ceil(num_test_instance / TEST_BATCH_SIZE)
 
         for k in range(num_test_batch):
-            # Prepare batch data
+            # Prepare batch data for evaluation
             s_idx = k * TEST_BATCH_SIZE
             e_idx = min(num_test_instance, s_idx + TEST_BATCH_SIZE)
             sources_batch = data.sources[s_idx:e_idx]
@@ -84,7 +84,7 @@ def node_classification_eval(
         netmodel.eval()  # Set model to evaluation mode
 
         for k in range(num_batch):
-            # Prepare batch data
+            # Prepare batch data for evaluation
             s_idx = k * batch_size
             e_idx = min(num_instance, s_idx + batch_size)
 
@@ -133,9 +133,6 @@ def node_classification_eval(
         auc_roc = roc_auc_score(
             all_true_labels, all_pred_prob, average=None, multi_class="ovr"
         )
-        # weighted_auc_roc = roc_auc_score(
-        #     all_true_labels, all_pred_prob, average="weighted", multi_class="ovr"
-        # )
     except ValueError as e:
         print(f"[Warning] AUC error: {e}")
         auc_roc = np.full(num_classes, np.nan)
@@ -156,11 +153,11 @@ def node_classification_eval(
     return (auc_roc, precision, recall, f1, support, all_pred_prob, all_true_labels)
 
 
-def edge_prediction_eval2(
+def edge_prediction_eval_transductive(
     model, negative_edge_sampler, data, n_neighbors, batch_size=200
 ):
     """
-    Evaluate edge prediction in distributed setting.
+    Evaluate edge prediction in distributed setting (transductive setting).
     Returns AP, AUC, precision, recall, F1, accuracy.
     """
     assert negative_edge_sampler.seed is not None  # Ensure sampler is seeded
@@ -176,7 +173,7 @@ def edge_prediction_eval2(
         num_batch = math.ceil(num_instance / batch_size)
 
         for k in range(num_batch):
-            # Prepare batch data
+            # Prepare batch data for evaluation
             s_idx = k * batch_size
             e_idx = min(num_instance, s_idx + batch_size)
 

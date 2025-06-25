@@ -1,14 +1,13 @@
 import numpy as np
 import torch
 
-
+# MergeLayer: Merges two input tensors and applies two linear layers with ReLU activation
 class MergeLayer(torch.nn.Module):
     def __init__(self, dim1, dim2, dim3, dim4):
         super().__init__()
         self.fc1 = torch.nn.Linear(dim1 + dim2, dim3)
         self.fc2 = torch.nn.Linear(dim3, dim4)
         self.act = torch.nn.ReLU()
-
         torch.nn.init.xavier_normal_(self.fc1.weight)
         torch.nn.init.xavier_normal_(self.fc2.weight)
 
@@ -17,59 +16,37 @@ class MergeLayer(torch.nn.Module):
         h = self.act(self.fc1(x))
         return self.fc2(h)
 
-
+# MLP: Multi-layer perceptron for classification
 class MLP(torch.nn.Module):
-    def __init__(self,device, dim, num_classes=None, drop=0.3):
+    def __init__(self, device, dim, num_classes=None, drop=0.3):
         super().__init__()
         self.device = device
-        print("num:",num_classes)
+        print("num:", num_classes)
         print(f"Using device: {device}")
-        self.fc_1 = torch.nn.Linear(dim, 80) # 输入到隐藏层
-        self.fc_2 = torch.nn.Linear(80, 10)  # 隐藏层到第二层
-        self.fc_3 = torch.nn.Linear(10, num_classes)  # 输出层，输出 num_classes 个类别
-        self.act = torch.nn.ReLU()  # 激活函数
-        self.dropout = torch.nn.Dropout(p=drop, inplace=False)  # Dropout 层
-        # 如果 device 不为 None，则把所有模块移到指定 device 上
-        # if self.device is not None:
-        #     self.to(self.device)
-        
-        
+        self.fc_1 = torch.nn.Linear(dim, 80)  # Input to hidden layer
+        self.fc_2 = torch.nn.Linear(80, 10)   # Hidden to second layer
+        self.fc_3 = torch.nn.Linear(10, num_classes)  # Output layer
+        self.act = torch.nn.ReLU()            # Activation function
+        self.dropout = torch.nn.Dropout(p=drop, inplace=False)  # Dropout layer
+
     def forward(self, x):
-        x = self.act(self.fc_1(x))  # 激活第一个隐藏层
-        x = self.dropout(x)  # 应用 Dropout
-        x = self.act(self.fc_2(x))  # 激活第二个隐藏层
-        x = self.dropout(x)  # 应用 Dropout
-        return self.fc_3(x)  # 输出层，输出各类别的得分
+        x = self.act(self.fc_1(x))
+        x = self.dropout(x)
+        x = self.act(self.fc_2(x))
+        x = self.dropout(x)
+        return self.fc_3(x)
 
-
-# class MLP_label(torch.nn.Module):
-#   def __init__(self, dim, num_classes=None, drop=0.3):
-#     super().__init__()
-#     self.fc_1 = torch.nn.Linear(dim, 80)      # 输入到隐藏层
-#     self.fc_2 = torch.nn.Linear(80, 10)       # 隐藏层到第二层
-#     self.fc_3 = torch.nn.Linear(10, num_classes)  # 输出层，输出 num_classes 个类别
-#     self.act = torch.nn.ReLU()                # 激活函数
-#     self.dropout = torch.nn.Dropout(p=drop, inplace=False)  # Dropout 层
-
-#   def forward(self, x):
-#     x = self.act(self.fc_1(x))                # 激活第一个隐藏层
-#     x = self.dropout(x)                       # 应用 Dropout
-#     x = self.act(self.fc_2(x))                # 激活第二个隐藏层
-#     x = self.dropout(x)                       # 应用 Dropout
-#     return torch.sigmoid(self.fc_3(x))        # 使用 sigmoid 来处理每个标签的独立概率
-
-
+# Early stopping monitor for single or multi-task training
 class EarlyStopMonitor(object):
     def __init__(self, max_round=3, higher_better=True, tolerance=1e-10):
         self.max_round = max_round
         self.num_round = 0
-
         self.epoch_count = 0
         self.best_epoch = 0
         self.best_model_state = None
         self.last_best = None
-        self.last_best_edge = None  # 用于保存链接预测的最好结果
-        self.last_best_node = None  # 用于保存节点分类的最好结果
+        self.last_best_edge = None  # For best edge prediction result
+        self.last_best_node = None  # For best node classification result
         self.higher_better = higher_better
         self.tolerance = tolerance
 
@@ -84,21 +61,18 @@ class EarlyStopMonitor(object):
             self.best_epoch = self.epoch_count
         else:
             self.num_round += 1
-
         self.epoch_count += 1
-
         return self.num_round >= self.max_round
 
     def early_stop_check(self, curr_val_edge, curr_val_node):
         """
-        判断是否应该停止训练。两个任务（边预测和节点分类）都需要满足停止条件时才会提前停止训练
+        Early stopping for two tasks (edge prediction and node classification).
+        Only stop if both tasks meet the stopping condition.
         """
         if not self.higher_better:
             curr_val_edge *= -1
             curr_val_node *= -1
-
         if self.last_best_edge is None or self.last_best_node is None:
-            # 初始时，保存第一个 epoch 的结果
             self.last_best_edge = curr_val_edge
             self.last_best_node = curr_val_node
         elif (curr_val_edge - self.last_best_edge) / np.abs(
@@ -106,59 +80,51 @@ class EarlyStopMonitor(object):
         ) > self.tolerance and (curr_val_node - self.last_best_node) / np.abs(
             self.last_best_node
         ) > self.tolerance:
-            # 只有当两个任务都有效改善时，才会更新最好的结果
             self.last_best_edge = curr_val_edge
             self.last_best_node = curr_val_node
             self.num_round = 0
             self.best_epoch = self.epoch_count
         else:
-            # 如果没有有效改善，增加等待轮次
             self.num_round += 1
-
         self.epoch_count += 1
-        # 如果等待轮次大于最大轮次，则触发早停
         return self.num_round >= self.max_round
+
+# Early stopping monitor for DDP training
 class EarlyStopMonitor_ddp(object):
-  def __init__(self, max_round=3, higher_better=True, tolerance=1e-10):
-    self.max_round = max_round
-    self.num_round = 0
+    def __init__(self, max_round=3, higher_better=True, tolerance=1e-10):
+        self.max_round = max_round
+        self.num_round = 0
+        self.epoch_count = 0
+        self.best_epoch = 0
+        self.best_model_state = None
+        self.last_best = None
+        self.higher_better = higher_better
+        self.tolerance = tolerance
 
-    self.epoch_count = 0
-    self.best_epoch = 0
-    self.best_model_state = None
-
-
-    self.last_best = None
-    self.higher_better = higher_better
-    self.tolerance = tolerance
-
-  def early_stop_check(self, curr_val):
-    if not self.higher_better:
-      curr_val *= -1
-    if self.last_best is None:
-      self.last_best = curr_val
-    elif (curr_val - self.last_best) / np.abs(self.last_best) > self.tolerance:
-      self.last_best = curr_val
-      self.num_round = 0
-      self.best_epoch = self.epoch_count
-    else:
-      self.num_round += 1
-
-    self.epoch_count += 1
-
-    return self.num_round >= self.max_round
-
+    def early_stop_check(self, curr_val):
+        if not self.higher_better:
+            curr_val *= -1
+        if self.last_best is None:
+            self.last_best = curr_val
+        elif (curr_val - self.last_best) / np.abs(self.last_best) > self.tolerance:
+            self.last_best = curr_val
+            self.num_round = 0
+            self.best_epoch = self.epoch_count
+        else:
+            self.num_round += 1
+        self.epoch_count += 1
+        return self.num_round >= self.max_round
 
 import torch
 import torch.nn.functional as F
 
-
+# Random edge sampler for negative sampling
+default_seed = None
 class RandEdgeSampler(object):
     def __init__(self, src_list, dst_list, seed=None):
         self.seed = None
         self.src_list = np.unique(src_list)
         self.dst_list = np.unique(dst_list)
-
         if seed is not None:
             self.seed = seed
             self.random_state = np.random.RandomState(self.seed)
@@ -168,7 +134,6 @@ class RandEdgeSampler(object):
             src_index = np.random.randint(0, len(self.src_list), size)
             dst_index = np.random.randint(0, len(self.dst_list), size)
         else:
-
             src_index = self.random_state.randint(0, len(self.src_list), size)
             dst_index = self.random_state.randint(0, len(self.dst_list), size)
         return self.src_list[src_index], self.dst_list[dst_index]
@@ -176,7 +141,7 @@ class RandEdgeSampler(object):
     def reset_random_state(self):
         self.random_state = np.random.RandomState(self.seed)
 
-
+# Build neighbor finder for temporal graph
 def get_neighbor_finder(data, uniform, max_node_idx=None):
     max_node_idx = (
         max(data.sources.max(), data.destinations.max())
@@ -189,51 +154,37 @@ def get_neighbor_finder(data, uniform, max_node_idx=None):
     ):
         adj_list[source].append((destination, edge_idx, timestamp))
         adj_list[destination].append((source, edge_idx, timestamp))
-
     return NeighborFinder(adj_list, uniform=uniform)
 
-
-
-
-
+# Temporal neighbor finder for dynamic graphs
 class NeighborFinder:
     def __init__(self, adj_list, uniform=False, seed=None):
         self.node_to_neighbors = []
         self.node_to_edge_idxs = []
         self.node_to_edge_timestamps = []
-
         for neighbors in adj_list:
             # Neighbors is a list of tuples (neighbor, edge_idx, timestamp)
-            # We sort the list based on timestamp
+            # Sort by timestamp
             sorted_neighhbors = sorted(neighbors, key=lambda x: x[2])
             self.node_to_neighbors.append(np.array([x[0] for x in sorted_neighhbors]))
             self.node_to_edge_idxs.append(np.array([x[1] for x in sorted_neighhbors]))
             self.node_to_edge_timestamps.append(
                 np.array([x[2] for x in sorted_neighhbors])
             )
-
         self.uniform = uniform
-
         if seed is not None:
             self.seed = seed
             self.random_state = np.random.RandomState(self.seed)
 
     def find_before(self, src_idx, cut_time):
         """
-        Extracts all the interactions happening before cut_time for user src_idx in the overall interaction graph. The returned interactions are sorted by time.
-
-        Returns 3 lists: neighbors, edge_idxs, timestamps
-
+        Extract all interactions before cut_time for user src_idx in the graph.
+        Returns 3 lists: neighbors, edge_idxs, timestamps (sorted by time).
         """
-
-        # modify
         if len(self.node_to_edge_timestamps[src_idx]) == 0:
-            # 如果没有时间戳，返回空列表或适当的处理方式
             print(f"Warning: Node {src_idx} has no timestamps.")
             return [], [], []
-
         i = np.searchsorted(self.node_to_edge_timestamps[src_idx], cut_time)
-
         return (
             self.node_to_neighbors[src_idx][:i],
             self.node_to_edge_idxs[src_idx][:i],
@@ -246,43 +197,33 @@ class NeighborFinder:
         Returns arrays of neighbor ids, edge times, and edge indices for each source node.
         """
         assert len(source_nodes) == len(timestamps)
-
         tmp_n_neighbors = n_neighbors if n_neighbors > 0 else 1
-        # Initialize output arrays
         neighbors = np.zeros((len(source_nodes), tmp_n_neighbors), dtype=np.int32)
         edge_times = np.zeros((len(source_nodes), tmp_n_neighbors), dtype=np.float32)
         edge_idxs = np.zeros((len(source_nodes), tmp_n_neighbors), dtype=np.int32)
-
         for i, (source_node, timestamp) in enumerate(zip(source_nodes, timestamps)):
-            # Get all neighbors, edge indices, and times before the given timestamp
             source_neighbors, source_edge_idxs, source_edge_times = self.find_before(
                 source_node, timestamp
             )
-
             if len(source_neighbors) > 0 and n_neighbors > 0:
                 if self.uniform:
-                    # Uniformly sample neighbors if enabled
                     sampled_idx = np.random.randint(
                         0, len(source_neighbors), n_neighbors
                     )
                     neighbors[i, :] = source_neighbors[sampled_idx]
                     edge_times[i, :] = source_edge_times[sampled_idx]
                     edge_idxs[i, :] = source_edge_idxs[sampled_idx]
-                    # Sort by time
                     pos = edge_times[i, :].argsort()
                     neighbors[i, :] = neighbors[i, :][pos]
                     edge_times[i, :] = edge_times[i, :][pos]
                     edge_idxs[i, :] = edge_idxs[i, :][pos]
                 else:
-                    # Take the most recent interactions
                     source_edge_times = source_edge_times[-n_neighbors:]
                     source_neighbors = source_neighbors[-n_neighbors:]
                     source_edge_idxs = source_edge_idxs[-n_neighbors:]
-
                     assert len(source_neighbors) <= n_neighbors
                     assert len(source_edge_times) <= n_neighbors
                     assert len(source_edge_idxs) <= n_neighbors
-
                     neighbors[i, n_neighbors - len(source_neighbors) :] = (
                         source_neighbors
                     )
@@ -292,18 +233,6 @@ class NeighborFinder:
                     edge_idxs[i, n_neighbors - len(source_edge_idxs) :] = (
                         source_edge_idxs
                     )
-
         return neighbors, edge_idxs, edge_times
 
 
-# === 以下为 utils_mulit 中独有的部分 ===
-
-
-# class MLP(torch.nn.Module):
-#   def __init__(self, dim, drop=0.3):
-#     super().__init__()
-#     self.fc_1 = torch.nn.Linear(dim, 80)
-#     self.fc_2 = torch.nn.Linear(80, 10)
-#     self.fc_3 = torch.nn.Linear(10, 1)
-#     self.act = torch.nn.ReLU()
-#     self.dropout = torch.nn.Dropout(p=drop, inplace=False)

@@ -13,6 +13,11 @@ from model.time_encoding import TimeEncode
 
 
 class NetModel(torch.nn.Module):
+    """
+    Temporal Graph Neural Network Model supporting both link prediction and node classification.
+    Handles memory, message passing, and embedding computation for temporal graphs.
+    """
+
     def __init__(
         self,
         neighbor_finder,
@@ -39,7 +44,7 @@ class NetModel(torch.nn.Module):
         use_destination_embedding_in_message=False,
         use_source_embedding_in_message=False,
         dyrep=False,
-        mode="link_prediction"
+        mode="link_prediction",
     ):
         super(NetModel, self).__init__()
         self.n_layers = n_layers
@@ -47,41 +52,26 @@ class NetModel(torch.nn.Module):
         self.device = device
         self.node_features = node_features
         self.node_raw_features = node_features
-        self.mode = mode  # 存储模式
+        self.mode = mode  # Store mode: 'link_prediction' or 'node_classification'
         if self.mode not in ["link_prediction", "node_classification"]:
             raise ValueError(
                 "Mode must be either 'link_prediction' or 'node_classification'"
             )
 
         if self.mode == "link_prediction":
-            self.num_classes = None  # 对于链接预测，通常输出为1（正/负边）
+            self.num_classes = None  # For link prediction, output is usually 1 (positive/negative edge)
         elif self.mode == "node_classification":
-            self.num_classes = num_classes  # 存储 num_classes
-        
-        # self.node_raw_features = {}
-        # all_nodes_set = set()
-        # for (node_id, timestamp), feat in node_features.items():
-        #     if timestamp not in self.node_raw_features:
-        #         self.node_raw_features[timestamp] = {}
-        #     self.node_raw_features[timestamp][node_id] = torch.from_numpy(feat.astype(np.float32)).to(device)
-        #     all_nodes_set.add(node_id)
+            self.num_classes = num_classes  # Store number of classes for node classification
 
-        # self.n_nodes = len(all_nodes_set)
-        # self.n_nodes = len(node_features)
+        # Set number of nodes (should be set according to your dataset)
         self.n_nodes = 88863
 
         self.edge_raw_features = torch.from_numpy(edge_features.astype(np.float32)).to(
             device
         )
 
-        # self.n_node_features = self.node_raw_features.shape[1]
-        # first_timestamp = list(self.node_raw_features.keys())[0]
-        # first_node_id = list(self.node_raw_features[first_timestamp].keys())[0]
-        # self.n_node_features = self.node_raw_features[first_timestamp][first_node_id].shape[0]
-        # self.n_node_features=1000
+        # Set node and edge feature dimensions
         self.n_node_features = memory_dimension
-        ##
-        # self.n_nodes = self.node_raw_features.shape[0]
         self.n_edge_features = self.edge_raw_features.shape[1]
         self.embedding_dimension = self.n_node_features
         self.n_neighbors = n_neighbors
@@ -118,16 +108,15 @@ class NetModel(torch.nn.Module):
                 input_dimension=message_dimension,
                 message_dimension=message_dimension,
                 device=device,
-                mode = self.mode
+                mode=self.mode,
             )
             self.message_aggregator = get_message_aggregator(
-                aggregator_type=aggregator_type,
-                device = device
+                aggregator_type=aggregator_type, device=device
             )
             self.message_function = get_message_function(
                 module_type=message_function,
                 raw_message_dimension=raw_message_dimension,
-                message_dimension=message_dimension
+                message_dimension=message_dimension,
             )
             self.memory_updater = get_memory_updater(
                 module_type=memory_updater_type,
@@ -135,7 +124,7 @@ class NetModel(torch.nn.Module):
                 message_dimension=message_dimension,
                 memory_dimension=self.memory_dimension,
                 device=device,
-                mode = self.mode
+                mode=self.mode,
             )
 
         self.embedding_module_type = embedding_module_type
@@ -159,15 +148,14 @@ class NetModel(torch.nn.Module):
             n_neighbors=self.n_neighbors,
         )
 
-
         # Decoder for node classification
         if self.mode == "node_classification":
-            # 使用 MLP 作为节点分类解码器
+            # Use MLP as node classification decoder
             self.node_classification_decoder = MLP(
-                device,memory_dimension, num_classes, dropout
+                device, memory_dimension, num_classes, dropout
             )
 
-        # MergeLayer for link prediction
+        # MergeLayer for link prediction affinity score
         self.affinity_score = MergeLayer(
             self.n_node_features, self.n_node_features, self.n_node_features, 1
         )
@@ -183,23 +171,19 @@ class NetModel(torch.nn.Module):
     ):
         """
         Compute temporal embeddings for sources, destinations, and negatively sampled destinations.
-
-        source_nodes [batch_size]: source ids.
-        :param destination_nodes [batch_size]: destination ids
-        :param negative_nodes [batch_size]: ids of negative sampled destination
-        :param edge_times [batch_size]: timestamp of interaction
-        :param edge_idxs [batch_size]: index of interaction
-        :param n_neighbors [scalar]: number of temporal neighbor to consider in each convolutional
-        layer
-        :return: Temporal embeddings for sources, destinations and negatives
+        :param source_nodes: [batch_size] source ids
+        :param destination_nodes: [batch_size] destination ids
+        :param negative_nodes: [batch_size] negative sampled destination ids
+        :param edge_times: [batch_size] timestamps of interactions
+        :param edge_idxs: [batch_size] indices of interactions
+        :param n_neighbors: number of temporal neighbors to consider in each convolutional layer
+        :return: Temporal embeddings for sources, destinations, and negatives
         """
 
         n_samples = len(source_nodes)
-        # nodes = np.concatenate([source_nodes, destination_nodes, negative_nodes])
         if self.mode == "link_prediction":
             nodes = np.concatenate([source_nodes, destination_nodes, negative_nodes])
             positives = np.concatenate([source_nodes, destination_nodes])
-
         else:
             nodes = np.concatenate(
                 [
@@ -249,14 +233,11 @@ class NetModel(torch.nn.Module):
         time_diffs = None
         if self.use_memory:
             if self.memory_update_at_start:
-
                 # Update memory for all nodes with messages stored in previous batches
                 memory, last_update = self.get_updated_memory(
                     list(range(self.n_nodes)), self.memory.messages
                 )
             else:
-                # memory = self.memory.get_memory(list(range(self.n_nodes)))
-                # memory = self.memory.get_memory(list(range(self.n_nodes))).clone()
                 if self.mode == "link_prediction":
                     memory = self.memory.get_memory(list(range(self.n_nodes)))
                 else:
@@ -266,11 +247,9 @@ class NetModel(torch.nn.Module):
                         .clone()
                         .requires_grad_(True)
                     )
-
                 last_update = self.memory.last_update
 
-            ### Compute differences between the time the memory of a node was last updated,
-            ### and the time for which we want to compute the embedding of a node
+            # Compute time differences between last memory update and current edge time
             source_time_diffs = (
                 torch.LongTensor(edge_times).to(self.device)
                 - last_update[source_nodes].long()
@@ -285,7 +264,6 @@ class NetModel(torch.nn.Module):
             destination_time_diffs = (
                 destination_time_diffs - self.mean_time_shift_dst
             ) / self.std_time_shift_dst
-
             negative_time_diffs = (
                 torch.LongTensor(edge_times).to(self.device)
                 - last_update[negative_nodes].long()
@@ -293,20 +271,11 @@ class NetModel(torch.nn.Module):
             negative_time_diffs = (
                 negative_time_diffs - self.mean_time_shift_dst
             ) / self.std_time_shift_dst
-
             time_diffs = torch.cat(
                 [source_time_diffs, destination_time_diffs, negative_time_diffs], dim=0
             )
 
         # Compute the embeddings using the embedding module
-        # node_embedding = self.embedding_module.compute_embedding(memory=memory,
-        #                                                          source_nodes=nodes,
-        #                                                          timestamps=timestamps,
-        #                                                          n_layers=self.n_layers,
-        #                                                          n_neighbors=n_neighbors,
-        #                                                          time_diffs=time_diffs)
-
-        # modify
         node_embedding = self.embedding_module.compute_embedding(
             memory=memory,
             source_nodes=nodes,
@@ -323,14 +292,11 @@ class NetModel(torch.nn.Module):
 
         if self.use_memory:
             if self.memory_update_at_start:
-                # Persist the updates to the memory only for sources and destinations (since now we have
-                # new messages for them)
+                # Persist the updates to the memory only for sources and destinations
                 self.update_memory(positives, self.memory.messages)
-
                 assert torch.allclose(
                     memory[positives], self.memory.get_memory(positives), atol=1e-3
-                ), "Something wrong in how the memory was updated"
-
+                ), "Memory update mismatch after update"
                 # Remove messages for the positives since we have already updated the memory using them
                 self.memory.clear_messages(positives)
 
@@ -380,15 +346,15 @@ class NetModel(torch.nn.Module):
         n_neighbors=20,
     ):
         """
-        Compute probabilities for edges between sources and destination and between sources and
+        Compute probabilities for edges between sources and destinations and between sources and
         negatives by first computing temporal embeddings using the NetModel encoder and then feeding them
         into the MLP decoder.
-        :param destination_nodes [batch_size]: destination ids
-        :param negative_nodes [batch_size]: ids of negative sampled destination
-        :param edge_times [batch_size]: timestamp of interaction
-        :param edge_idxs [batch_size]: index of interaction
-        :param n_neighbors [scalar]: number of temporal neighbor to consider in each convolutional
-        layer
+        :param source_nodes: [batch_size] source ids
+        :param destination_nodes: [batch_size] destination ids
+        :param negative_nodes: [batch_size] negative sampled destination ids
+        :param edge_times: [batch_size] timestamps of interactions
+        :param edge_idxs: [batch_size] indices of interactions
+        :param n_neighbors: number of temporal neighbors to consider in each convolutional layer
         :return: Probabilities for both the positive and negative edges
         """
         n_samples = len(source_nodes)
@@ -402,43 +368,44 @@ class NetModel(torch.nn.Module):
                 n_neighbors,
             )
         )
-
         score = self.affinity_score(
             torch.cat([source_node_embedding, source_node_embedding], dim=0),
             torch.cat([destination_node_embedding, negative_node_embedding]),
         ).squeeze(dim=0)
         pos_score = score[:n_samples]
         neg_score = score[n_samples:]
-
         return pos_score.sigmoid(), neg_score.sigmoid()
 
     def update_memory(self, nodes, messages):
-        # Aggregate messages for the same nodes
+        """
+        Aggregate messages for the same nodes and update the memory.
+        :param nodes: List of node ids
+        :param messages: Dictionary mapping node id to list of (message, timestamp)
+        """
         unique_nodes, unique_messages, unique_timestamps = (
             self.message_aggregator.aggregate(nodes, messages)
         )
-
         if len(unique_nodes) > 0:
             unique_messages = self.message_function.compute_message(unique_messages)
-
-        # Update the memory with the aggregated messages
         self.memory_updater.update_memory(
             unique_nodes, unique_messages, timestamps=unique_timestamps
         )
 
     def get_updated_memory(self, nodes, messages):
-        # Aggregate messages for the same nodes
+        """
+        Aggregate messages for the same nodes and return updated memory and last update.
+        :param nodes: List of node ids
+        :param messages: Dictionary mapping node id to list of (message, timestamp)
+        :return: Updated memory and last update
+        """
         unique_nodes, unique_messages, unique_timestamps = (
             self.message_aggregator.aggregate(nodes, messages)
         )
-
         if len(unique_nodes) > 0:
             unique_messages = self.message_function.compute_message(unique_messages)
-
         updated_memory, updated_last_update = self.memory_updater.get_updated_memory(
             unique_nodes, unique_messages, timestamps=unique_timestamps
         )
-
         return updated_memory, updated_last_update
 
     def get_raw_messages(
@@ -450,15 +417,23 @@ class NetModel(torch.nn.Module):
         edge_times,
         edge_idxs,
     ):
+        """
+        Construct raw messages for each source node, including memory, destination memory, edge features, and time encoding.
+        :param source_nodes: List of source node ids
+        :param source_node_embedding: Embeddings for source nodes
+        :param destination_nodes: List of destination node ids
+        :param destination_node_embedding: Embeddings for destination nodes
+        :param edge_times: List or array of edge timestamps
+        :param edge_idxs: List or array of edge indices
+        :return: Unique source node ids and a dictionary mapping node id to list of (message, timestamp)
+        """
         edge_times = torch.from_numpy(edge_times).float().to(self.device)
         edge_features = self.edge_raw_features[edge_idxs]
-        # Ensure unique_sources is always defined
         if isinstance(source_nodes, torch.Tensor):
             source_nodes_np = source_nodes.cpu().numpy()
         else:
             source_nodes_np = source_nodes
         unique_sources = np.unique(source_nodes_np)
-
         source_memory = (
             self.memory.get_memory(source_nodes)
             if not self.use_source_embedding_in_message
@@ -469,12 +444,10 @@ class NetModel(torch.nn.Module):
             if not self.use_destination_embedding_in_message
             else destination_node_embedding
         )
-
         source_time_delta = edge_times - self.memory.last_update[source_nodes]
         source_time_delta_encoding = self.time_encoder(
             source_time_delta.unsqueeze(dim=1)
         ).view(len(source_nodes), -1)
-
         source_message = torch.cat(
             [
                 source_memory,
@@ -485,15 +458,15 @@ class NetModel(torch.nn.Module):
             dim=1,
         )
         messages = defaultdict(list)
-        # unique_sources = np.unique(source_nodes)
-        # unique_sources = np.unique(source_nodes.cpu().numpy())
-
         for i in range(len(source_nodes)):
             messages[source_nodes[i]].append((source_message[i], edge_times[i]))
-
         return unique_sources, messages
 
     def set_neighbor_finder(self, neighbor_finder):
+        """
+        Set a new neighbor finder for the model and its embedding module.
+        :param neighbor_finder: New neighbor finder object
+        """
         self.neighbor_finder = neighbor_finder
         self.embedding_module.neighbor_finder = neighbor_finder
 
@@ -506,11 +479,19 @@ class NetModel(torch.nn.Module):
         edge_idxs,
         n_neighbors=20,
     ):
-        # Only support node classification mode for forward
+        """
+        Forward pass for node classification mode. Computes embeddings and returns link prediction and classification outputs.
+        :param source_nodes: List of source node ids
+        :param destination_nodes: List of destination node ids
+        :param negative_nodes: List of negative sampled destination node ids
+        :param edge_times: List or array of edge timestamps
+        :param edge_idxs: List or array of edge indices
+        :param n_neighbors: Number of neighbors to use
+        :return: Positive/negative link prediction scores and node classification logits
+        """
         if self.mode != "node_classification":
             raise ValueError("Mode must be 'node_classification'")
-
-        # 只执行一次 embedding 计算
+        # Only perform embedding computation once
         src_emb, dst_emb, neg_emb = self.compute_temporal_embeddings(
             source_nodes,
             destination_nodes,
@@ -519,16 +500,11 @@ class NetModel(torch.nn.Module):
             edge_idxs,
             n_neighbors,
         )
-
-        # 🔗 链接预测
         n_samples = len(source_nodes)
         score = self.affinity_score(
             torch.cat([src_emb, src_emb], dim=0), torch.cat([dst_emb, neg_emb], dim=0)
         ).squeeze(dim=0)
         pos_score = score[:n_samples].sigmoid()
         neg_score = score[n_samples:].sigmoid()
-
-        # 🔍 节点分类
         logits = self.node_classification_decoder(src_emb)
-
         return pos_score, neg_score, logits

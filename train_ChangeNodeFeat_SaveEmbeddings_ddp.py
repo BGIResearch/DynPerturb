@@ -1,5 +1,5 @@
 from model.NetModel import NetModel
-from utils.DataLoader import get_data_ddp, compute_time_statistics
+from utils.DataLoader import get_data, compute_time_statistics
 from utils.utils import (
     RandEdgeSampler,
     get_neighbor_finder,
@@ -14,7 +14,6 @@ import json
 from collections import defaultdict
 import time
 import logging
-
 
 # Set CUDA and environment variables for debugging and disabling pixi collection
 os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
@@ -159,8 +158,7 @@ TIME_DIM = args.time_dim
 USE_MEMORY = args.use_memory
 MESSAGE_DIM = args.message_dim
 MEMORY_DIM = args.memory_dim
-#NumClasses = args.num_classes
-NumClasses = 3
+NumClasses = args.num_classes
 MODE = "node_classification"
 
 # Define output directories based on DATA name
@@ -177,25 +175,23 @@ Path(RESULTS_DIR).mkdir(parents=True, exist_ok=True)
 
 MODEL_SAVE_PATH = f"{MODEL_DIR}/best_model.pth"
 
-### set up logger
+# Set up logger
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
 logger.setLevel(logging.DEBUG)
-# Path("log/").mkdir(parents=True, exist_ok=True)
-# fh = logging.FileHandler('log/{}.log'.format(str(time.time())))
-fh = logging.FileHandler(f"/home/share/huadjyin/home/s_qinhua2/02code/guozhihan/DynPertub/log/ddp2_log/train.log")
+fh = logging.FileHandler("./ddp2_log/train.log")
 fh.setLevel(logging.DEBUG)
 ch = logging.StreamHandler()
 ch.setLevel(logging.WARN)
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 fh.setFormatter(formatter)
 ch.setFormatter(formatter)
 logger.addHandler(fh)
 logger.addHandler(ch)
 logger.info(args)
-# Use def instead of lambda for checkpoint path
 
 
+# Function to get checkpoint path for a given epoch
 def get_checkpoint_path(epoch):
     return os.path.join(CHECKPOINT_DIR, f"checkpoint_epoch_{epoch}.pth")
 
@@ -213,7 +209,7 @@ BEST_EMBEDDING_PATH = f"{EMBEDDING_DIR}/embeddings_best.json"
     test_data,
     new_node_val_data,
     new_node_test_data,
-) = get_data_ddp(DATA, use_validation=args.use_validation)
+) = get_data(DATA, use_ddp=True, use_validation=args.use_validation)
 
 # Initialize neighbor finders for training and evaluation
 train_ngh_finder = get_neighbor_finder(train_data, args.uniform)
@@ -240,10 +236,10 @@ mean_time_shift_src, std_time_shift_src, mean_time_shift_dst, std_time_shift_dst
         full_data.sources, full_data.destinations, full_data.timestamps
     )
 )
-logger.info("🔹loading the best model for infering...")
+logger.info("Loading the best model for inference...")
+
 # Set model save path (modify as needed)
-# MODEL_SAVE_PATH = "/home/share/huadjyin/home/s_qinhua2/02code/netmodel-master/human_bone/saved_models/humanbone_F1_usememory_fullneighbor-HumanBone  node-classification.pth"
-MODEL_SAVE_PATH = f"/home/share/huadjyin/home/s_qinhua2/02code/tgn-master/spatiotemporal_mouse/saved_models/mouse_spatial-mouse_spatial  node-classification.pth"
+MODEL_SAVE_PATH = "./"  # best model path
 if not os.path.exists(MODEL_SAVE_PATH):
     raise FileNotFoundError(
         f"Best model not found at {MODEL_SAVE_PATH}, please train first."
@@ -280,8 +276,10 @@ netmodel = NetModel(
 netmodel = netmodel.to(device)
 netmodel.load_state_dict(torch.load(MODEL_SAVE_PATH), strict=False)
 netmodel.eval()
-logger.info(f'✅ Successfully loaded the best model from {MODEL_SAVE_PATH}')
-logger.info("🔹 Starting batched inference with memory propagation (no per-time grouping)...")
+logger.info(f"Successfully loaded the best model from {MODEL_SAVE_PATH}")
+logger.info(
+    "Starting batched inference with memory propagation (no per-time grouping)..."
+)
 
 # Initialize memory if enabled
 if USE_MEMORY:
@@ -327,8 +325,10 @@ with torch.no_grad():
                         "embedding": emb_dst[i].detach().cpu().numpy().tolist(),
                     }
                 )
-                batch_end_time = time.time()
-                print(f"Batch {start // BATCH_SIZE + 1} processed in {batch_end_time - batch_start_time:.2f} seconds")
+            batch_end_time = time.time()
+            print(
+                f"Batch {start // BATCH_SIZE + 1} processed in {batch_end_time - batch_start_time:.2f} seconds"
+            )
     except Exception as e:
         print(f"[Warning] Embedding computation failed: {e}")
 
@@ -340,8 +340,8 @@ try:
         json.dump(saved_embeddings, f, default=str)
 except Exception as e:
     print(f"[Warning] Failed to save embeddings: {e}")
-logger.info(f"✅ Embeddings with memory propagation saved to {save_path}")
-# ✅ 日志：总共保存了多少个嵌入点
+logger.info(f"Embeddings with memory propagation saved to {save_path}")
+# Log: total number of saved embedding points
 total_embs = sum(len(v) for v in saved_embeddings.values())
-logger.info(f"📦 Total node-time embeddings saved: {total_embs}")
-logger.info(f"📁 Saved JSON file to {save_path}")
+logger.info(f"Total node-time embeddings saved: {total_embs}")
+logger.info(f"Saved JSON file to {save_path}")

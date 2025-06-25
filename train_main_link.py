@@ -1,6 +1,6 @@
-from evaluation.evaluation import edge_prediction_eval1
+from evaluation.evaluation import edge_prediction_eval_inductive
 from model.NetModel import NetModel
-from utils.DataLoader import get_data_link1, compute_time_statistics
+from utils.DataLoader import get_data, compute_time_statistics
 from utils.utils import EarlyStopMonitor, RandEdgeSampler, get_neighbor_finder
 import math
 import time
@@ -14,7 +14,7 @@ import os
 from copy import deepcopy
 import logging
 
-# Set working directory and random seeds (modify as needed)
+# Set working directory and random seeds for reproducibility
 os.chdir("./")  # Use project root as working directory. Adjust if needed.
 torch.manual_seed(0)
 np.random.seed(0)
@@ -171,13 +171,11 @@ Path(LOG_DIR).mkdir(parents=True, exist_ok=True)
 
 MODEL_SAVE_PATH = f"{MODEL_DIR}/{args.prefix}_best_model.pth"
 
-### set up logger
+# Set up logger
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
 logger.setLevel(logging.DEBUG)
-# Path("log/").mkdir(parents=True, exist_ok=True)
-# fh = logging.FileHandler('log/{}.log'.format(str(time.time())))
-fh = logging.FileHandler(f'/home/share/huadjyin/home/s_qinhua2/02code/guozhihan/DynPertub/log/link1_log/train.log')
+fh = logging.FileHandler(f'./train.log')
 fh.setLevel(logging.DEBUG)
 ch = logging.StreamHandler()
 ch.setLevel(logging.WARN)
@@ -187,7 +185,6 @@ ch.setFormatter(formatter)
 logger.addHandler(fh)
 logger.addHandler(ch)
 logger.info(args)
-
 
 def get_checkpoint_path(epoch):
     return f"{CHECKPOINT_DIR}/{args.prefix}_checkpoint_epoch_{epoch}.pth"
@@ -205,7 +202,7 @@ BEST_EMBEDDING_PATH = f"{EMBEDDING_DIR}/{args.prefix}_embeddings_best.json"
     test_data,
     new_node_val_data,
     new_node_test_data,
-) = get_data_link1(
+) = get_data(
     DATA,
     different_new_nodes_between_val_and_test=args.different_new_nodes,
     randomize_features=args.randomize_features,
@@ -351,7 +348,7 @@ for i in range(args.n_runs):
         netmodel.set_neighbor_finder(full_ngh_finder)
         if USE_MEMORY:
             train_memory_backup = netmodel.memory.backup_memory()
-        val_ap, val_auc, val_acc, val_f1 = edge_prediction_eval1(
+        val_ap, val_auc, val_acc, val_f1 = edge_prediction_eval_inductive(
             model=netmodel,
             negative_edge_sampler=val_rand_sampler,
             data=val_data,
@@ -362,7 +359,7 @@ for i in range(args.n_runs):
             netmodel.memory.restore_memory(train_memory_backup)
         if USE_MEMORY:
             netmodel.memory.__init_memory__()
-        nn_val_ap, nn_val_auc, nn_val_acc, nn_val_f1 = edge_prediction_eval1(
+        nn_val_ap, nn_val_auc, nn_val_acc, nn_val_f1 = edge_prediction_eval_inductive(
             model=netmodel,
             negative_edge_sampler=val_rand_sampler,
             data=new_node_val_data,
@@ -377,7 +374,6 @@ for i in range(args.n_runs):
 
         # Print validation performance
         print(f"Validation AP: {val_ap:.4f} | AUC: {val_auc:.4f} | Accuracy: {val_acc:.4f} | F1: {val_f1:.4f}")
-
 
         # Save training/validation results with exception handling
         try:
@@ -398,12 +394,6 @@ for i in range(args.n_runs):
         total_epoch_times.append(total_epoch_time)
         logger.info('epoch: {} took {:.2f}s'.format(epoch, total_epoch_time))
         logger.info('Epoch mean loss: {}'.format(np.mean(m_loss)))
-        # logger.info(
-        #   'val auc: {}, new node val auc: {}'.format(val_auc, nn_val_auc))
-        # logger.info(
-        #   'val ap: {}, new node val ap: {}'.format(val_ap, nn_val_ap))
-        # logger.info(
-        #   'val acc: {}, new node val acc: {}'.format(val_acc, nn_val_acc))
         logger.info(
         'Validation statistics: Old nodes -- auc: {:.4f}, ap: {:.4f}, acc: {:.4f}, f1: {:.4f}'.format(
             val_auc, val_ap, val_acc, val_f1))
@@ -417,13 +407,6 @@ for i in range(args.n_runs):
             early_stopper.best_model_state = deepcopy(netmodel.state_dict())
             torch.save(netmodel.state_dict(), MODEL_SAVE_PATH)
             logger.info(f'Best model saved at epoch {epoch}')
-        # if early_stopper.early_stop_check_raw(val_auc):
-            
-        #     netmodel.eval()
-
-        #     break
-        # else:
-        #     torch.save(netmodel.state_dict(), get_checkpoint_path(epoch))
         if early_stopper.early_stop_check_raw(val_auc):
             logger.info(f'No improvement over {args.patience} epochs, stopping training at epoch {epoch}')
             logger.info(f'Loading the best model at epoch {early_stopper.best_epoch}')
@@ -449,7 +432,7 @@ for i in range(args.n_runs):
             print(f"[Warning] Failed to init memory: {e}")
     # Test phase
     netmodel.embedding_module.neighbor_finder = full_ngh_finder
-    test_ap, test_auc, test_acc, test_f1 = edge_prediction_eval1(
+    test_ap, test_auc, test_acc, test_f1 = edge_prediction_eval_inductive(
         model=netmodel,
         negative_edge_sampler=test_rand_sampler,
         data=test_data,
@@ -466,7 +449,7 @@ for i in range(args.n_runs):
             netmodel.memory.restore_memory(best_memory_backup)
         except Exception as e:
             print(f"[Warning] Failed to restore memory: {e}")
-    nn_test_ap, nn_test_auc, nn_test_acc, nn_test_f1 = edge_prediction_eval1(
+    nn_test_ap, nn_test_auc, nn_test_acc, nn_test_f1 = edge_prediction_eval_inductive(
         model=netmodel,
         negative_edge_sampler=nn_test_rand_sampler,
         data=new_node_test_data,

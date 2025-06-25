@@ -54,6 +54,10 @@ class Memory(nn.Module):
         self.messages = defaultdict(list)
 
     def store_raw_messages(self, nodes, node_id_to_messages):
+        """
+        Store raw messages for each node. In link prediction mode, messages are stored directly.
+        In node classification mode, messages are detached from the computation graph.
+        """
         if self.mode == "link_prediction":
             for node in nodes:
                 self.messages[node].extend(node_id_to_messages[node])
@@ -64,24 +68,43 @@ class Memory(nn.Module):
                 )
 
     def get_memory(self, node_idxs):
+        """
+        Get the memory for the given node indices.
+        In link prediction mode, returns the memory directly.
+        In node classification mode, returns a detached copy.
+        """
         if self.mode == "link_prediction":
             return self.memory[node_idxs, :]
         else:
             return self.memory[node_idxs, :].clone().detach()
 
     def set_memory(self, node_idxs, values):
+        """
+        Set the memory for the given node indices.
+        In link prediction mode, sets the memory directly.
+        In node classification mode, sets a detached copy.
+        """
         if self.mode == "link_prediction":
             self.memory[node_idxs, :] = values
         else:
             self.memory[node_idxs, :] = values.detach()
 
     def get_last_update(self, node_idxs):
+        """
+        Get the last update timestamps for the given node indices.
+        In link prediction mode, returns the timestamps directly.
+        In node classification mode, returns a detached copy.
+        """
         if self.mode == "link_prediction":
             return self.last_update[node_idxs]
         else:
             return self.last_update[node_idxs].clone().detach()
 
     def backup_memory(self):
+        """
+        Backup the current memory, last update, and messages.
+        Returns a tuple containing the memory, last update, and messages.
+        """
         if self.mode == "link_prediction":
             messages_clone = {}
             for k, v in self.messages.items():
@@ -103,6 +126,9 @@ class Memory(nn.Module):
             )
 
     def restore_memory(self, memory_backup):
+        """
+        Restore the memory, last update, and messages from a backup.
+        """
         if self.mode == "link_prediction":
             self.memory.data, self.last_update.data = (
                 memory_backup[0].clone(),
@@ -248,6 +274,9 @@ class SequenceMemoryUpdater(MemoryUpdater):
 
 class GRUMemoryUpdater(SequenceMemoryUpdater):
     def __init__(self, memory, message_dimension, memory_dimension, device,mode):
+        """
+        GRU-based memory updater for temporal graph models.
+        """
         super(GRUMemoryUpdater, self).__init__(
             memory, message_dimension, memory_dimension, device,mode
         )
@@ -259,6 +288,9 @@ class GRUMemoryUpdater(SequenceMemoryUpdater):
 
 class RNNMemoryUpdater(SequenceMemoryUpdater):
     def __init__(self, memory, message_dimension, memory_dimension, device,mode):
+        """
+        RNN-based memory updater for temporal graph models.
+        """
         super(RNNMemoryUpdater, self).__init__(
             memory, message_dimension, memory_dimension, device,mode
         )
@@ -270,18 +302,25 @@ class RNNMemoryUpdater(SequenceMemoryUpdater):
 
 class LSTMMemoryUpdater(SequenceMemoryUpdater):
     def __init__(self, memory, message_dimension, memory_dimension, device,mode):
+        """
+        LSTM-based memory updater for temporal graph models.
+        """
         super(LSTMMemoryUpdater, self).__init__(
             memory, message_dimension, memory_dimension, device,mode
         )
         self.memory_updater = nn.LSTMCell(
             input_size=message_dimension, hidden_size=memory_dimension
         )
+        # Create a memory cell with the same shape as memory
         self.memory_cell = torch.zeros_like(
             self.memory.memory.data
-        )  # 与 memory 同 shape
+        )
         self.memory_cell = self.memory_cell.to(device)
 
     def update_memory(self, unique_node_ids, unique_messages, timestamps):
+        """
+        Update memory and cell state for a batch of unique nodes and messages at given timestamps using LSTM.
+        """
         if len(unique_node_ids) <= 0:
             return
 
@@ -292,7 +331,7 @@ class LSTMMemoryUpdater(SequenceMemoryUpdater):
             if last_update_timestamp > current_timestamp:
                 continue
 
-            # 当前 h 和 c 状态
+            # Get current hidden and cell states
             h_prev = self.memory.get_memory(node_id)
             c_prev = self.memory_cell[node_id]
 
@@ -303,6 +342,9 @@ class LSTMMemoryUpdater(SequenceMemoryUpdater):
             self.memory.last_update[node_id] = current_timestamp
 
     def get_updated_memory(self, unique_node_ids, unique_messages, timestamps):
+        """
+        Return updated memory, cell state, and last_update for a batch of unique nodes and messages at given timestamps using LSTM.
+        """
         updated_memory = self.memory.memory.data.clone()
         updated_cell = self.memory_cell.clone()
         updated_last_update = self.memory.last_update.data.clone()
@@ -334,6 +376,9 @@ def get_memory_updater(
     device,
     mode="link_prediction"
 ):
+    """
+    Factory function to get the appropriate memory updater module.
+    """
     if module_type == "gru":
         return GRUMemoryUpdater(
             memory, message_dimension, memory_dimension, device, mode
