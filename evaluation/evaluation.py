@@ -1,12 +1,6 @@
 import torch
 import numpy as np
-from sklearn.metrics import (
-    roc_auc_score,
-    average_precision_score,
-    f1_score,
-    accuracy_score,
-    precision_recall_fscore_support,
-)
+from sklearn.metrics import roc_auc_score,average_precision_score,f1_score,accuracy_score,precision_recall_fscore_support
 import torch.distributed as dist
 import math
 
@@ -20,7 +14,7 @@ def edge_prediction_eval_link(
     """
     assert negative_edge_sampler.seed is not None  # Ensure sampler is seeded
     negative_edge_sampler.reset_random_state()  # Reset sampler state
-
+t
     val_ap, val_auc, val_acc, val_f1 = [], [], [], []  # Store metrics for each batch
 
     with torch.no_grad():
