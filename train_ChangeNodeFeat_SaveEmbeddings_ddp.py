@@ -1,9 +1,6 @@
 from model.NetModel import NetModel
 from utils.DataLoader import get_data, compute_time_statistics
-from utils.utils import (
-    RandEdgeSampler,
-    get_neighbor_finder,
-)
+from utils.utils import RandEdgeSampler,get_neighbor_finder
 import sys
 import argparse
 import torch
@@ -26,115 +23,36 @@ np.random.seed(0)
 
 # Argument parser for command-line options
 parser = argparse.ArgumentParser("NetModel self-supervised training")
-parser.add_argument(
-    "-d",
-    "--data",
-    type=str,
-    help="Dataset name (e.g., wikipedia or reddit)",
-    default="celltype32",
-)
+parser.add_argument("-d", "--data", type=str, help="Dataset name (e.g., wikipedia or reddit)", default="celltype32")
 parser.add_argument("--bs", type=int, default=200, help="Batch size")
-parser.add_argument(
-    "--prefix", type=str, default="", help="Prefix for checkpoint naming"
-)
-parser.add_argument(
-    "--n_degree", type=int, default=20, help="Number of neighbors to sample"
-)
+parser.add_argument("--prefix", type=str, default="", help="Prefix for checkpoint naming")
+parser.add_argument("--n_degree", type=int, default=20, help="Number of neighbors to sample")
 parser.add_argument("--n_head", type=int, default=2, help="Number of attention heads")
 parser.add_argument("--n_epoch", type=int, default=100, help="Number of epochs")
 parser.add_argument("--n_layer", type=int, default=1, help="Number of network layers")
 parser.add_argument("--lr", type=float, default=3e-4, help="Learning rate")
-parser.add_argument(
-    "--patience", type=int, default=10, help="Patience for early stopping"
-)
+parser.add_argument("--patience", type=int, default=10, help="Patience for early stopping")
 parser.add_argument("--n_runs", type=int, default=1, help="Number of runs")
 parser.add_argument("--drop_out", type=float, default=0.1, help="Dropout probability")
 parser.add_argument("--gpu", type=int, default=0, help="GPU index to use")
-parser.add_argument(
-    "--node_dim", type=int, default=100, help="Node embedding dimension"
-)
-parser.add_argument(
-    "--time_dim", type=int, default=100, help="Time embedding dimension"
-)
-parser.add_argument(
-    "--backprop_every",
-    type=int,
-    default=1,
-    help="Backpropagation frequency (in batches)",
-)
-parser.add_argument(
-    "--use_memory",
-    action="store_true",
-    help="Enable node memory augmentation",
-)
-parser.add_argument(
-    "--embedding_module",
-    type=str,
-    default="graph_attention",
-    choices=["graph_attention", "graph_sum", "identity", "time"],
-    help="Embedding module type",
-)
-parser.add_argument(
-    "--message_function",
-    type=str,
-    default="identity",
-    choices=["mlp", "identity"],
-    help="Message function type",
-)
-parser.add_argument(
-    "--memory_updater",
-    type=str,
-    default="gru",
-    choices=["gru", "rnn", "lstm"],
-    help="Memory updater type",
-)
-parser.add_argument(
-    "--aggregator", type=str, default="last", help="Message aggregator type"
-)
-parser.add_argument(
-    "--memory_update_at_end",
-    action="store_true",
-    help="Update memory at the end of batch",
-)
+parser.add_argument("--node_dim", type=int, default=100, help="Node embedding dimension")
+parser.add_argument("--time_dim", type=int, default=100, help="Time embedding dimension")
+parser.add_argument("--backprop_every", type=int, default=1, help="Backpropagation frequency (in batches)")
+parser.add_argument("--use_memory", action="store_true", help="Enable node memory augmentation")
+parser.add_argument("--embedding_module", type=str, default="graph_attention", choices=["graph_attention", "graph_sum", "identity", "time"], help="Embedding module type")
+parser.add_argument("--message_function", type=str, default="identity", choices=["mlp", "identity"], help="Message function type")
+parser.add_argument("--memory_updater", type=str, default="gru", choices=["gru", "rnn", "lstm"], help="Memory updater type")
+parser.add_argument("--aggregator", type=str, default="last", help="Message aggregator type")
+parser.add_argument("--memory_update_at_end", action="store_true", help="Update memory at the end of batch")
 parser.add_argument("--message_dim", type=int, default=100, help="Message dimension")
-parser.add_argument(
-    "--memory_dim",
-    type=int,
-    default=1000,
-    help="Memory dimension per user",
-)
+parser.add_argument("--memory_dim", type=int, default=1000, help="Memory dimension per user")
 parser.add_argument("--num_classes", type=int, default=8, help="Number of classes")
-parser.add_argument(
-    "--different_new_nodes",
-    action="store_true",
-    help="Use disjoint new node sets for train and val",
-)
-parser.add_argument(
-    "--uniform",
-    action="store_true",
-    help="Uniform sampling from temporal neighbors",
-)
-parser.add_argument(
-    "--randomize_features",
-    action="store_true",
-    help="Randomize node features",
-)
-parser.add_argument(
-    "--use_destination_embedding_in_message",
-    action="store_true",
-    help="Include destination embedding in message",
-)
-parser.add_argument(
-    "--use_source_embedding_in_message",
-    action="store_true",
-    help="Include source embedding in message",
-)
-parser.add_argument(
-    "--use_validation",
-    action="store_true",
-    default=True,
-    help="Use validation set",
-)
+parser.add_argument("--different_new_nodes", action="store_true", help="Use disjoint new node sets for train and val")
+parser.add_argument("--uniform", action="store_true", help="Uniform sampling from temporal neighbors")
+parser.add_argument("--randomize_features", action="store_true", help="Randomize node features")
+parser.add_argument("--use_destination_embedding_in_message", action="store_true", help="Include destination embedding in message")
+parser.add_argument("--use_source_embedding_in_message", action="store_true", help="Include source embedding in message")
+parser.add_argument("--use_validation", action="store_true", default=True, help="Use validation set")
 
 try:
     args = parser.parse_args()
@@ -200,16 +118,7 @@ RESULTS_PATH = f"{RESULTS_DIR}/results.pkl"
 BEST_EMBEDDING_PATH = f"{EMBEDDING_DIR}/embeddings_best.json"
 
 # Load data and features
-(
-    full_data,
-    node_features,
-    edge_features,
-    train_data,
-    val_data,
-    test_data,
-    new_node_val_data,
-    new_node_test_data,
-) = get_data(DATA, use_ddp=True, use_validation=args.use_validation)
+(full_data,node_features,edge_features,train_data,val_data,test_data,new_node_val_data,new_node_test_data,) = get_data(DATA, use_ddp=True, use_validation=args.use_validation)
 
 # Initialize neighbor finders for training and evaluation
 train_ngh_finder = get_neighbor_finder(train_data, args.uniform)
@@ -218,32 +127,22 @@ full_ngh_finder = get_neighbor_finder(full_data, args.uniform)
 # Initialize negative edge samplers
 train_rand_sampler = RandEdgeSampler(train_data.sources, train_data.destinations)
 val_rand_sampler = RandEdgeSampler(full_data.sources, full_data.destinations, seed=0)
-nn_val_rand_sampler = RandEdgeSampler(
-    new_node_val_data.sources, new_node_val_data.destinations, seed=1
-)
+nn_val_rand_sampler = RandEdgeSampler(new_node_val_data.sources, new_node_val_data.destinations, seed=1)
 test_rand_sampler = RandEdgeSampler(full_data.sources, full_data.destinations, seed=2)
-nn_test_rand_sampler = RandEdgeSampler(
-    new_node_test_data.sources, new_node_test_data.destinations, seed=3
-)
+nn_test_rand_sampler = RandEdgeSampler(new_node_test_data.sources, new_node_test_data.destinations, seed=3)
 
 # Set device for computation
 device_string = "cuda:{}".format(GPU) if torch.cuda.is_available() else "cpu"
 device = torch.device(device_string)
 
 # Compute time statistics for temporal encoding
-mean_time_shift_src, std_time_shift_src, mean_time_shift_dst, std_time_shift_dst = (
-    compute_time_statistics(
-        full_data.sources, full_data.destinations, full_data.timestamps
-    )
-)
+mean_time_shift_src, std_time_shift_src, mean_time_shift_dst, std_time_shift_dst = (compute_time_statistics(full_data.sources, full_data.destinations, full_data.timestamps))
 logger.info("Loading the best model for inference...")
 
 # Set model save path (modify as needed)
 MODEL_SAVE_PATH = "./"  # best model path
 if not os.path.exists(MODEL_SAVE_PATH):
-    raise FileNotFoundError(
-        f"Best model not found at {MODEL_SAVE_PATH}, please train first."
-    )
+    raise FileNotFoundError(f"Best model not found at {MODEL_SAVE_PATH}, please train first.")
 
 # Initialize NetModel
 netmodel = NetModel(
@@ -277,9 +176,7 @@ netmodel = netmodel.to(device)
 netmodel.load_state_dict(torch.load(MODEL_SAVE_PATH), strict=False)
 netmodel.eval()
 logger.info(f"Successfully loaded the best model from {MODEL_SAVE_PATH}")
-logger.info(
-    "Starting batched inference with memory propagation (no per-time grouping)..."
-)
+logger.info("Starting batched inference with memory propagation (no per-time grouping)...")
 
 # Initialize memory if enabled
 if USE_MEMORY:
@@ -306,29 +203,15 @@ with torch.no_grad():
             ts = torch.from_numpy(timestamps[start:end]).to(device)
             eid = torch.from_numpy(edge_idxs[start:end]).to(device)
             neg = dst.clone()
-            emb_src, emb_dst, _ = netmodel.compute_temporal_embeddings(
-                src, dst, neg, ts, eid
-            )
+            emb_src, emb_dst, _ = netmodel.compute_temporal_embeddings(src, dst, neg, ts, eid)
             for i in range(len(src)):
                 s_id = int(src[i])
                 d_id = int(dst[i])
                 t_val = float(ts[i])
-                saved_embeddings[s_id].append(
-                    {
-                        "timestamp": t_val,
-                        "embedding": emb_src[i].detach().cpu().numpy().tolist(),
-                    }
-                )
-                saved_embeddings[d_id].append(
-                    {
-                        "timestamp": t_val,
-                        "embedding": emb_dst[i].detach().cpu().numpy().tolist(),
-                    }
-                )
+                saved_embeddings[s_id].append({"timestamp": t_val,"embedding": emb_src[i].detach().cpu().numpy().tolist()})
+                saved_embeddings[d_id].append({"timestamp": t_val,"embedding": emb_dst[i].detach().cpu().numpy().tolist()})
             batch_end_time = time.time()
-            print(
-                f"Batch {start // BATCH_SIZE + 1} processed in {batch_end_time - batch_start_time:.2f} seconds"
-            )
+            print(f"Batch {start // BATCH_SIZE + 1} processed in {batch_end_time - batch_start_time:.2f} seconds")
     except Exception as e:
         print(f"[Warning] Embedding computation failed: {e}")
 

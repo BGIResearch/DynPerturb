@@ -61,10 +61,7 @@ class EmbeddingModule(nn.Module):
             os.makedirs(save_dir)
         serializable_embeddings = {}
         for node, emb_list in self.saved_embeddings.items():
-            serializable_embeddings[int(node)] = [
-                {"timestamp": float(ts), "embedding": emb.tolist()}
-                for ts, emb in emb_list
-            ]
+            serializable_embeddings[int(node)] = [{"timestamp": float(ts), "embedding": emb.tolist()} for ts, emb in emb_list]
         save_path = os.path.join(save_dir, f"embeddings_epoch_{epoch}.json")
         with open(save_path, "w") as f:
             json.dump(serializable_embeddings, f)
@@ -82,13 +79,8 @@ class EmbeddingModule(nn.Module):
             os.makedirs(save_dir)
         serializable_embeddings = {}
         for node, emb_list in self.saved_embeddings.items():
-            serializable_embeddings[int(node)] = [
-                {"timestamp": float(ts), "embedding": emb.tolist()}
-                for ts, emb in emb_list
-            ]
-        save_path = os.path.join(
-            save_dir, f"embeddings_{node_to_modify}_{modify_time}.json"
-        )
+            serializable_embeddings[int(node)] = [{"timestamp": float(ts), "embedding": emb.tolist()} for ts, emb in emb_list]
+        save_path = os.path.join(save_dir, f"embeddings_{node_to_modify}_{modify_time}.json")
         with open(save_path, "w") as f:
             json.dump(serializable_embeddings, f)
         print(f"Saved embeddings new at {save_path}")
@@ -106,14 +98,7 @@ class EmbeddingModule(nn.Module):
             ts = float(ts.item())
             emb = emb.detach().cpu()
             # Check if timestamp already exists for this node
-            existing = next(
-                (
-                    (i, e)
-                    for i, (time, e) in enumerate(self.saved_embeddings[node_id])
-                    if time == ts
-                ),
-                None,
-            )
+            existing = next(((i, e)for i, (time, e) in enumerate(self.saved_embeddings[node_id]) if time == ts),None)
             if existing:
                 index, _ = existing
                 self.saved_embeddings[node_id][index] = (ts, emb)
@@ -139,9 +124,7 @@ class EmbeddingModule(nn.Module):
                     feature_vector = np.zeros(self.n_node_features, dtype=np.float32)
             else:
                 feature_vector = np.zeros(self.n_node_features, dtype=np.float32)
-            feature_vector = torch.tensor(
-                feature_vector, dtype=torch.float32, device=self.device
-            )
+            feature_vector = torch.tensor(feature_vector, dtype=torch.float32, device=self.device)
             batch_features.append(feature_vector)
         return torch.stack(batch_features)
 
@@ -269,12 +252,8 @@ class GraphEmbedding(EmbeddingModule):
         """Recursive computation of temporal graph attention layers."""
         assert n_layers >= 0
         source_nodes_torch = torch.from_numpy(source_nodes).long().to(self.device)
-        timestamps_torch = torch.unsqueeze(
-            torch.from_numpy(timestamps).float().to(self.device), dim=1
-        )
-        source_node_features = self.get_node_features_at_time(
-            source_nodes_torch, timestamps_torch
-        )
+        timestamps_torch = torch.unsqueeze(torch.from_numpy(timestamps).float().to(self.device), dim=1)
+        source_node_features = self.get_node_features_at_time(source_nodes_torch, timestamps_torch)
         if self.use_memory:
             source_node_features = memory[source_nodes, :] + source_node_features
         if n_layers == 0:
@@ -282,44 +261,19 @@ class GraphEmbedding(EmbeddingModule):
             self.log_embedding(source_nodes, timestamps, embeddings)
             return embeddings
         else:
-            neighbors, edge_idxs, edge_times = (
-                self.neighbor_finder.get_temporal_neighbor(
-                    source_nodes, timestamps, n_neighbors=n_neighbors
-                )
-            )
+            neighbors, edge_idxs, edge_times = (self.neighbor_finder.get_temporal_neighbor(source_nodes, timestamps, n_neighbors=n_neighbors))
             neighbors_torch = torch.from_numpy(neighbors).long().to(self.device)
             edge_deltas = timestamps[:, np.newaxis] - edge_times
             edge_deltas_torch = torch.from_numpy(edge_deltas).float().to(self.device)
-            neighbor_node_features = self.get_node_features_at_time(
-                neighbors.flatten(), np.repeat(timestamps, n_neighbors)
-            )
-            neighbor_embeddings = self.compute_embedding(
-                memory,
-                neighbors.flatten(),
-                np.repeat(timestamps, n_neighbors),
-                neighbor_node_features,
-                n_layers=n_layers - 1,
-                n_neighbors=n_neighbors,
-            )
+            neighbor_node_features = self.get_node_features_at_time(neighbors.flatten(), np.repeat(timestamps, n_neighbors))
+            neighbor_embeddings = self.compute_embedding(memory,neighbors.flatten(),np.repeat(timestamps, n_neighbors),neighbor_node_features,n_layers=n_layers - 1,n_neighbors=n_neighbors,)
             effective_n_neighbors = n_neighbors if n_neighbors > 0 else 1
-            neighbor_embeddings = neighbor_embeddings.view(
-                len(source_nodes), effective_n_neighbors, -1
-            )
+            neighbor_embeddings = neighbor_embeddings.view(len(source_nodes), effective_n_neighbors, -1)
             edge_time_embeddings = self.time_encoder(edge_deltas_torch)
-            source_nodes_time_embedding = self.time_encoder(
-                torch.zeros_like(timestamps_torch)
-            )
+            source_nodes_time_embedding = self.time_encoder(torch.zeros_like(timestamps_torch))
             edge_features = self.edge_features[edge_idxs, :]
             mask = neighbors_torch == 0
-            source_embedding = self.aggregate(
-                n_layers,
-                source_node_features,
-                source_nodes_time_embedding,
-                neighbor_embeddings,
-                edge_time_embeddings,
-                edge_features,
-                mask,
-            )
+            source_embedding = self.aggregate(n_layers,source_node_features,source_nodes_time_embedding,neighbor_embeddings,edge_time_embeddings,edge_features,mask)
             self.log_embedding(source_nodes, timestamps, source_embedding)
         return source_embedding
 
@@ -370,24 +324,8 @@ class GraphSumEmbedding(GraphEmbedding):
             dropout=dropout,
             use_memory=use_memory,
         )
-        self.linear_1 = torch.nn.ModuleList(
-            [
-                torch.nn.Linear(
-                    embedding_dimension + n_time_features + n_edge_features,
-                    embedding_dimension,
-                )
-                for _ in range(n_layers)
-            ]
-        )
-        self.linear_2 = torch.nn.ModuleList(
-            [
-                torch.nn.Linear(
-                    embedding_dimension + n_node_features + n_time_features,
-                    embedding_dimension,
-                )
-                for _ in range(n_layers)
-            ]
-        )
+        self.linear_1 = torch.nn.ModuleList([torch.nn.Linear(embedding_dimension + n_time_features + n_edge_features,embedding_dimension,)for _ in range(n_layers)])
+        self.linear_2 = torch.nn.ModuleList([torch.nn.Linear(embedding_dimension + n_node_features + n_time_features,embedding_dimension,)for _ in range(n_layers)])
 
     def aggregate(
         self,
@@ -399,16 +337,10 @@ class GraphSumEmbedding(GraphEmbedding):
         edge_features,
         mask,
     ):
-        neighbors_features = torch.cat(
-            [neighbor_embeddings, edge_time_embeddings, edge_features], dim=2
-        )
+        neighbors_features = torch.cat([neighbor_embeddings, edge_time_embeddings, edge_features], dim=2)
         neighbor_embeddings_transformed = self.linear_1[n_layer - 1](neighbors_features)
-        neighbors_sum = torch.nn.functional.relu(
-            torch.sum(neighbor_embeddings_transformed, dim=1)
-        )
-        source_features = torch.cat(
-            [source_node_features, source_nodes_time_embedding.squeeze()], dim=1
-        )
+        neighbors_sum = torch.nn.functional.relu(torch.sum(neighbor_embeddings_transformed, dim=1))
+        source_features = torch.cat([source_node_features, source_nodes_time_embedding.squeeze()], dim=1)
         source_embedding = torch.cat([neighbors_sum, source_features], dim=1)
         source_embedding = self.linear_2[n_layer - 1](source_embedding)
         return source_embedding

@@ -1,7 +1,7 @@
 from collections import defaultdict
 import torch
 import numpy as np
-
+from torch import nn
 
 class MessageAggregator(torch.nn.Module):
     """
@@ -103,7 +103,7 @@ def get_message_aggregator(aggregator_type, device):
     else:
         raise ValueError("Message aggregator {} not implemented".format(aggregator_type))
 
-from torch import nn
+
 
 
 class MessageFunction(nn.Module):
@@ -123,11 +123,7 @@ class MLPMessageFunction(MessageFunction):
     def __init__(self, raw_message_dimension, message_dimension):
         super(MLPMessageFunction, self).__init__()
         # Multi-layer perceptron for message transformation
-        self.mlp = self.layers = nn.Sequential(
-            nn.Linear(raw_message_dimension, raw_message_dimension // 2),
-            nn.ReLU(),
-            nn.Linear(raw_message_dimension // 2, message_dimension),
-        )
+        self.mlp = self.layers = nn.Sequential(nn.Linear(raw_message_dimension, raw_message_dimension // 2),nn.ReLU(),nn.Linear(raw_message_dimension // 2, message_dimension),)
 
     def compute_message(self, raw_messages):
         """

@@ -1,4 +1,4 @@
-from evaluation.evaluation import edge_prediction_eval_inductive
+from evaluation.evaluation import edge_prediction_eval_link
 from model.NetModel import NetModel
 from utils.DataLoader import get_data, compute_time_statistics
 from utils.utils import EarlyStopMonitor, RandEdgeSampler, get_neighbor_finder
@@ -21,119 +21,39 @@ np.random.seed(0)
 
 # Argument parser for command-line options
 parser = argparse.ArgumentParser("NetModel self-supervised training")
-parser.add_argument(
-    "-d",
-    "--data",
-    type=str,
-    help="Dataset name (e.g., wikipedia or reddit)",
-    default="celltype32",
-)
+parser.add_argument("-d", "--data", type=str, help="Dataset name (e.g., wikipedia or reddit)", default="celltype32")
 parser.add_argument("--bs", type=int, default=200, help="Batch size")
-parser.add_argument(
-    "--prefix", type=str, default="", help="Prefix for checkpoint naming"
-)
-parser.add_argument(
-    "--n_degree", type=int, default=20, help="Number of neighbors to sample"
-)
+parser.add_argument("--prefix", type=str, default="", help="Prefix for checkpoint naming")
+parser.add_argument("--n_degree", type=int, default=20, help="Number of neighbors to sample")
 parser.add_argument("--n_head", type=int, default=2, help="Number of attention heads")
 parser.add_argument("--n_epoch", type=int, default=100, help="Number of epochs")
 parser.add_argument("--n_layer", type=int, default=1, help="Number of network layers")
 parser.add_argument("--lr", type=float, default=0.0001, help="Learning rate")
-parser.add_argument(
-    "--patience", type=int, default=10, help="Patience for early stopping"
-)
+parser.add_argument("--patience", type=int, default=10, help="Patience for early stopping")
 parser.add_argument("--n_runs", type=int, default=1, help="Number of runs")
 parser.add_argument("--drop_out", type=float, default=0.1, help="Dropout probability")
 parser.add_argument("--gpu", type=int, default=0, help="GPU index to use")
-parser.add_argument(
-    "--node_dim", type=int, default=100, help="Node embedding dimension"
-)
-parser.add_argument(
-    "--time_dim", type=int, default=100, help="Time embedding dimension"
-)
-parser.add_argument(
-    "--backprop_every",
-    type=int,
-    default=1,
-    help="Backpropagation frequency (in batches)",
-)
-parser.add_argument(
-    "--use_memory",
-    action="store_true",
-    help="Enable node memory augmentation",
-)
-parser.add_argument(
-    "--embedding_module",
-    type=str,
-    default="graph_attention",
-    choices=["graph_attention", "graph_sum", "identity", "time"],
-    help="Embedding module type",
-)
-parser.add_argument(
-    "--message_function",
-    type=str,
-    default="identity",
-    choices=["mlp", "identity"],
-    help="Message function type",
-)
-parser.add_argument(
-    "--memory_updater",
-    type=str,
-    default="gru",
-    choices=["gru", "rnn"],
-    help="Memory updater type",
-)
-parser.add_argument(
-    "--aggregator", type=str, default="last", help="Message aggregator type"
-)
-parser.add_argument(
-    "--memory_update_at_end",
-    action="store_true",
-    help="Update memory at the end of batch",
-)
-parser.add_argument(
-    "--message_dim", type=int, default=100, help="Message dimension"
-)
-parser.add_argument(
-    "--memory_dim",
-    type=int,
-    default=1000,
-    help="Memory dimension per user",
-)
-parser.add_argument(
-    "--different_new_nodes",
-    action="store_true",
-    help="Use disjoint new node sets for train and val",
-)
-parser.add_argument(
-    "--uniform",
-    action="store_true",
-    help="Uniform sampling from temporal neighbors",
-)
-parser.add_argument(
-    "--randomize_features",
-    action="store_true",
-    help="Randomize node features",
-)
-parser.add_argument(
-    "--use_destination_embedding_in_message",
-    action="store_true",
-    default=True,
-    help="Include destination embedding in message",
-)
-parser.add_argument(
-    "--use_source_embedding_in_message",
-    action="store_true",
-    default=True,
-    help="Include source embedding in message",
-)
-parser.add_argument(
-    "--dyrep", action="store_true", help="Whether to run the dyrep model"
-)
+parser.add_argument("--node_dim", type=int, default=100, help="Node embedding dimension")
+parser.add_argument("--time_dim", type=int, default=100, help="Time embedding dimension")
+parser.add_argument("--backprop_every", type=int, default=1, help="Backpropagation frequency (in batches)")
+parser.add_argument("--use_memory", action="store_true", help="Enable node memory augmentation")
+parser.add_argument("--embedding_module", type=str, default="graph_attention", choices=["graph_attention", "graph_sum", "identity", "time"], help="Embedding module type")
+parser.add_argument("--message_function", type=str, default="identity", choices=["mlp", "identity"], help="Message function type")
+parser.add_argument("--memory_updater", type=str, default="gru", choices=["gru", "rnn"], help="Memory updater type")
+parser.add_argument("--aggregator", type=str, default="last", help="Message aggregator type")
+parser.add_argument("--memory_update_at_end", action="store_true", help="Update memory at the end of batch")
+parser.add_argument("--message_dim", type=int, default=100, help="Message dimension")
+parser.add_argument("--memory_dim", type=int, default=1000, help="Memory dimension per user")
+parser.add_argument("--different_new_nodes", action="store_true", help="Use disjoint new node sets for train and val")
+parser.add_argument("--uniform", action="store_true", help="Uniform sampling from temporal neighbors")
+parser.add_argument("--randomize_features", action="store_true", help="Randomize node features")
+parser.add_argument("--use_destination_embedding_in_message", action="store_true", default=True, help="Include destination embedding in message")
+parser.add_argument("--use_source_embedding_in_message", action="store_true", default=True, help="Include source embedding in message")
+parser.add_argument("--dyrep", action="store_true", help="Whether to run the dyrep model")
 
 try:
     args = parser.parse_args()
-except:
+except Exception:
     parser.print_help()
     sys.exit(0)
 
@@ -193,20 +113,7 @@ def get_checkpoint_path(epoch):
 BEST_EMBEDDING_PATH = f"{EMBEDDING_DIR}/{args.prefix}_embeddings_best.json"
 
 # Load data and features
-(
-    node_features,
-    edge_features,
-    full_data,
-    train_data,
-    val_data,
-    test_data,
-    new_node_val_data,
-    new_node_test_data,
-) = get_data(
-    DATA,
-    different_new_nodes_between_val_and_test=args.different_new_nodes,
-    randomize_features=args.randomize_features,
-)
+node_features, edge_features, full_data, train_data, val_data, test_data, new_node_val_data, new_node_test_data = get_data(DATA, different_new_nodes_between_val_and_test=args.different_new_nodes, randomize_features=args.randomize_features)
 
 # Initialize neighbor finders for training and evaluation
 train_ngh_finder = get_neighbor_finder(train_data, args.uniform)
@@ -215,34 +122,25 @@ full_ngh_finder = get_neighbor_finder(full_data, args.uniform)
 # Initialize negative edge samplers
 train_rand_sampler = RandEdgeSampler(train_data.sources, train_data.destinations)
 val_rand_sampler = RandEdgeSampler(full_data.sources, full_data.destinations, seed=0)
-nn_val_rand_sampler = RandEdgeSampler(
-    new_node_val_data.sources, new_node_val_data.destinations, seed=1
-)
+nn_val_rand_sampler = RandEdgeSampler(new_node_val_data.sources, new_node_val_data.destinations, seed=1)
 test_rand_sampler = RandEdgeSampler(full_data.sources, full_data.destinations, seed=2)
-nn_test_rand_sampler = RandEdgeSampler(
-    new_node_test_data.sources, new_node_test_data.destinations, seed=3
-)
+nn_test_rand_sampler = RandEdgeSampler(new_node_test_data.sources, new_node_test_data.destinations, seed=3)
 
 # Set device for computation
 device_string = "cuda:{}".format(GPU) if torch.cuda.is_available() else "cpu"
 device = torch.device(device_string)
 
 # Compute time statistics for temporal encoding
-mean_time_shift_src, std_time_shift_src, mean_time_shift_dst, std_time_shift_dst = (
-    compute_time_statistics(
-        full_data.sources, full_data.destinations, full_data.timestamps
-    )
-)
+mean_time_shift_src, std_time_shift_src, mean_time_shift_dst, std_time_shift_dst = (compute_time_statistics(full_data.sources, full_data.destinations, full_data.timestamps))
 
 # Initialize best_memory_backup to avoid undefined variable
 best_memory_backup = None
 
+# Ensure USE_MEMORY is defined in the global scope
+USE_MEMORY = args.use_memory
+
 for i in range(args.n_runs):
-    results_path = (
-        f"{RESULTS_DIR}/{DATA}_{i}.pkl"
-        if i > 0
-        else f"{RESULTS_DIR}/{args.prefix}_{DATA}.pkl"
-    )
+    results_path = f"{RESULTS_DIR}/{DATA}_{i}.pkl" if i > 0 else f"{RESULTS_DIR}/{args.prefix}_{DATA}.pkl"
     Path(RESULTS_DIR).mkdir(parents=True, exist_ok=True)
 
     # Initialize Model
@@ -307,10 +205,7 @@ for i in range(args.n_runs):
                     continue
                 start_idx = batch_idx * BATCH_SIZE
                 end_idx = min(num_instance, start_idx + BATCH_SIZE)
-                sources_batch, destinations_batch = (
-                    train_data.sources[start_idx:end_idx],
-                    train_data.destinations[start_idx:end_idx],
-                )
+                sources_batch, destinations_batch = (train_data.sources[start_idx:end_idx],train_data.destinations[start_idx:end_idx],)
                 edge_idxs_batch = train_data.edge_idxs[start_idx:end_idx]
                 timestamps_batch = train_data.timestamps[start_idx:end_idx]
                 size = len(sources_batch)
@@ -319,17 +214,8 @@ for i in range(args.n_runs):
                     pos_label = torch.ones(size, dtype=torch.float, device=device)
                     neg_label = torch.zeros(size, dtype=torch.float, device=device)
                 netmodel = netmodel.train()
-                pos_prob, neg_prob = netmodel.compute_edge_probabilities(
-                    sources_batch,
-                    destinations_batch,
-                    negatives_batch,
-                    timestamps_batch,
-                    edge_idxs_batch,
-                    NUM_NEIGHBORS,
-                )
-                loss += criterion(pos_prob.squeeze(), pos_label) + criterion(
-                    neg_prob.squeeze(), neg_label
-                )
+                pos_prob, neg_prob = netmodel.compute_edge_probabilities(sources_batch, destinations_batch, negatives_batch, timestamps_batch, edge_idxs_batch, NUM_NEIGHBORS)
+                loss += criterion(pos_prob.squeeze(), pos_label) + criterion(neg_prob.squeeze(), neg_label)
             loss /= args.backprop_every
             loss.backward()
             optimizer.step()
@@ -348,23 +234,13 @@ for i in range(args.n_runs):
         netmodel.set_neighbor_finder(full_ngh_finder)
         if USE_MEMORY:
             train_memory_backup = netmodel.memory.backup_memory()
-        val_ap, val_auc, val_acc, val_f1 = edge_prediction_eval_inductive(
-            model=netmodel,
-            negative_edge_sampler=val_rand_sampler,
-            data=val_data,
-            n_neighbors=NUM_NEIGHBORS,
-        )
+        val_ap, val_auc, val_acc, val_f1 = edge_prediction_eval_link(model=netmodel, negative_edge_sampler=val_rand_sampler, data=val_data, n_neighbors=NUM_NEIGHBORS)
         if USE_MEMORY:
             val_memory_backup = netmodel.memory.backup_memory()
             netmodel.memory.restore_memory(train_memory_backup)
         if USE_MEMORY:
             netmodel.memory.__init_memory__()
-        nn_val_ap, nn_val_auc, nn_val_acc, nn_val_f1 = edge_prediction_eval_inductive(
-            model=netmodel,
-            negative_edge_sampler=val_rand_sampler,
-            data=new_node_val_data,
-            n_neighbors=NUM_NEIGHBORS,
-        )
+        nn_val_ap, nn_val_auc, nn_val_acc, nn_val_f1 = edge_prediction_eval_link(model=netmodel, negative_edge_sampler=val_rand_sampler, data=new_node_val_data, n_neighbors=NUM_NEIGHBORS)
         if USE_MEMORY:
             netmodel.memory.restore_memory(val_memory_backup)
         new_nodes_val_aps.append(nn_val_ap)
@@ -374,32 +250,17 @@ for i in range(args.n_runs):
 
         # Print validation performance
         print(f"Validation AP: {val_ap:.4f} | AUC: {val_auc:.4f} | Accuracy: {val_acc:.4f} | F1: {val_f1:.4f}")
-
-        # Save training/validation results with exception handling
         try:
             with open(results_path, "wb") as f:
-                pickle.dump(
-                    {
-                        "val_aps": val_aps,
-                        "new_nodes_val_aps": new_nodes_val_aps,
-                        "train_losses": train_losses,
-                        "epoch_times": epoch_times,
-                        "total_epoch_times": total_epoch_times,
-                    },
-                    f,
-                )
+                pickle.dump({"val_aps": val_aps, "new_nodes_val_aps": new_nodes_val_aps, "train_losses": train_losses, "epoch_times": epoch_times, "total_epoch_times": total_epoch_times}, f)
         except Exception as e:
             print(f"[Warning] Failed to save results: {e}")
         total_epoch_time = time.time() - start_epoch
         total_epoch_times.append(total_epoch_time)
         logger.info('epoch: {} took {:.2f}s'.format(epoch, total_epoch_time))
         logger.info('Epoch mean loss: {}'.format(np.mean(m_loss)))
-        logger.info(
-        'Validation statistics: Old nodes -- auc: {:.4f}, ap: {:.4f}, acc: {:.4f}, f1: {:.4f}'.format(
-            val_auc, val_ap, val_acc, val_f1))
-        logger.info(
-            'Validation statistics: New nodes -- auc: {:.4f}, ap: {:.4f}, acc: {:.4f}, f1: {:.4f}'.format(
-                nn_val_auc, nn_val_ap, nn_val_acc, nn_val_f1))
+        logger.info('Validation statistics: Old nodes -- auc: {:.4f}, ap: {:.4f}, acc: {:.4f}, f1: {:.4f}'.format(val_auc, val_ap, val_acc, val_f1))
+        logger.info('Validation statistics: New nodes -- auc: {:.4f}, ap: {:.4f}, acc: {:.4f}, f1: {:.4f}'.format(nn_val_auc, nn_val_ap, nn_val_acc, nn_val_f1))
         if val_auc > best_loss:
             best_loss = val_auc
             best_epoch = epoch
@@ -432,43 +293,19 @@ for i in range(args.n_runs):
             print(f"[Warning] Failed to init memory: {e}")
     # Test phase
     netmodel.embedding_module.neighbor_finder = full_ngh_finder
-    test_ap, test_auc, test_acc, test_f1 = edge_prediction_eval_inductive(
-        model=netmodel,
-        negative_edge_sampler=test_rand_sampler,
-        data=test_data,
-        n_neighbors=NUM_NEIGHBORS,
-    )
+    test_ap, test_auc, test_acc, test_f1 = edge_prediction_eval_link(model=netmodel, negative_edge_sampler=test_rand_sampler, data=test_data, n_neighbors=NUM_NEIGHBORS)
     logger.info(
-    'Test statistics: Old nodes -- auc: {:.4f}, ap: {:.4f}, acc: {:.4f}, f1: {:.4f}'.format(
-        test_auc, test_ap, test_acc, test_f1))
-    logger.info(
-        'Test statistics: New nodes -- auc: {:.4f}, ap: {:.4f}, acc: {:.4f}, f1: {:.4f}'.format(
-            nn_test_auc, nn_test_ap, nn_test_acc, nn_test_f1))
+    'Test statistics: Old nodes -- auc: {:.4f}, ap: {:.4f}, acc: {:.4f}, f1: {:.4f}'.format(test_auc, test_ap, test_acc, test_f1))
+    logger.info('Test statistics: New nodes -- auc: {:.4f}, ap: {:.4f}, acc: {:.4f}, f1: {:.4f}'.format(nn_test_auc, nn_test_ap, nn_test_acc, nn_test_f1))
     if USE_MEMORY and best_memory_backup is not None:
         try:
             netmodel.memory.restore_memory(best_memory_backup)
         except Exception as e:
             print(f"[Warning] Failed to restore memory: {e}")
-    nn_test_ap, nn_test_auc, nn_test_acc, nn_test_f1 = edge_prediction_eval_inductive(
-        model=netmodel,
-        negative_edge_sampler=nn_test_rand_sampler,
-        data=new_node_test_data,
-        n_neighbors=NUM_NEIGHBORS,
-    )
+    nn_test_ap, nn_test_auc, nn_test_acc, nn_test_f1 = edge_prediction_eval_link(model=netmodel, negative_edge_sampler=nn_test_rand_sampler, data=new_node_test_data, n_neighbors=NUM_NEIGHBORS)
     try:
         with open(results_path, "wb") as f:
-            pickle.dump(
-                {
-                    "val_aps": val_aps,
-                    "new_nodes_val_aps": new_nodes_val_aps,
-                    "test_ap": test_ap,
-                    "new_node_test_ap": nn_test_ap,
-                    "epoch_times": epoch_times,
-                    "train_losses": train_losses,
-                    "total_epoch_times": total_epoch_times,
-                },
-                f,
-            )
+            pickle.dump({"val_aps": val_aps, "new_nodes_val_aps": new_nodes_val_aps, "test_ap": test_ap, "new_node_test_ap": nn_test_ap, "epoch_times": epoch_times, "train_losses": train_losses, "total_epoch_times": total_epoch_times}, f)
             logger.info('Saving TGN model')
     except Exception as e:
         print(f"[Warning] Failed to save test results: {e}")

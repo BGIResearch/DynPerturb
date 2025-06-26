@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+import torch.nn.functional as F
 
 # MergeLayer: Merges two input tensors and applies two linear layers with ReLU activation
 class MergeLayer(torch.nn.Module):
@@ -75,11 +76,7 @@ class EarlyStopMonitor(object):
         if self.last_best_edge is None or self.last_best_node is None:
             self.last_best_edge = curr_val_edge
             self.last_best_node = curr_val_node
-        elif (curr_val_edge - self.last_best_edge) / np.abs(
-            self.last_best_edge
-        ) > self.tolerance and (curr_val_node - self.last_best_node) / np.abs(
-            self.last_best_node
-        ) > self.tolerance:
+        elif (curr_val_edge - self.last_best_edge) / np.abs(self.last_best_edge) > self.tolerance and (curr_val_node - self.last_best_node) / np.abs(self.last_best_node) > self.tolerance:
             self.last_best_edge = curr_val_edge
             self.last_best_node = curr_val_node
             self.num_round = 0
@@ -115,8 +112,6 @@ class EarlyStopMonitor_ddp(object):
         self.epoch_count += 1
         return self.num_round >= self.max_round
 
-import torch
-import torch.nn.functional as F
 
 # Random edge sampler for negative sampling
 default_seed = None
@@ -143,15 +138,9 @@ class RandEdgeSampler(object):
 
 # Build neighbor finder for temporal graph
 def get_neighbor_finder(data, uniform, max_node_idx=None):
-    max_node_idx = (
-        max(data.sources.max(), data.destinations.max())
-        if max_node_idx is None
-        else max_node_idx
-    )
+    max_node_idx = (max(data.sources.max(), data.destinations.max()) if max_node_idx is None else max_node_idx)
     adj_list = [[] for _ in range(max_node_idx + 1)]
-    for source, destination, edge_idx, timestamp in zip(
-        data.sources, data.destinations, data.edge_idxs, data.timestamps
-    ):
+    for source, destination, edge_idx, timestamp in zip(data.sources, data.destinations, data.edge_idxs, data.timestamps):
         adj_list[source].append((destination, edge_idx, timestamp))
         adj_list[destination].append((source, edge_idx, timestamp))
     return NeighborFinder(adj_list, uniform=uniform)
@@ -168,9 +157,7 @@ class NeighborFinder:
             sorted_neighhbors = sorted(neighbors, key=lambda x: x[2])
             self.node_to_neighbors.append(np.array([x[0] for x in sorted_neighhbors]))
             self.node_to_edge_idxs.append(np.array([x[1] for x in sorted_neighhbors]))
-            self.node_to_edge_timestamps.append(
-                np.array([x[2] for x in sorted_neighhbors])
-            )
+            self.node_to_edge_timestamps.append(np.array([x[2] for x in sorted_neighhbors]))
         self.uniform = uniform
         if seed is not None:
             self.seed = seed
@@ -185,11 +172,7 @@ class NeighborFinder:
             print(f"Warning: Node {src_idx} has no timestamps.")
             return [], [], []
         i = np.searchsorted(self.node_to_edge_timestamps[src_idx], cut_time)
-        return (
-            self.node_to_neighbors[src_idx][:i],
-            self.node_to_edge_idxs[src_idx][:i],
-            self.node_to_edge_timestamps[src_idx][:i],
-        )
+        return (self.node_to_neighbors[src_idx][:i],self.node_to_edge_idxs[src_idx][:i],self.node_to_edge_timestamps[src_idx][:i])
 
     def get_temporal_neighbor(self, source_nodes, timestamps, n_neighbors=20):
         """
@@ -202,14 +185,10 @@ class NeighborFinder:
         edge_times = np.zeros((len(source_nodes), tmp_n_neighbors), dtype=np.float32)
         edge_idxs = np.zeros((len(source_nodes), tmp_n_neighbors), dtype=np.int32)
         for i, (source_node, timestamp) in enumerate(zip(source_nodes, timestamps)):
-            source_neighbors, source_edge_idxs, source_edge_times = self.find_before(
-                source_node, timestamp
-            )
+            source_neighbors, source_edge_idxs, source_edge_times = self.find_before(source_node, timestamp)
             if len(source_neighbors) > 0 and n_neighbors > 0:
                 if self.uniform:
-                    sampled_idx = np.random.randint(
-                        0, len(source_neighbors), n_neighbors
-                    )
+                    sampled_idx = np.random.randint(0, len(source_neighbors), n_neighbors)
                     neighbors[i, :] = source_neighbors[sampled_idx]
                     edge_times[i, :] = source_edge_times[sampled_idx]
                     edge_idxs[i, :] = source_edge_idxs[sampled_idx]
@@ -224,15 +203,7 @@ class NeighborFinder:
                     assert len(source_neighbors) <= n_neighbors
                     assert len(source_edge_times) <= n_neighbors
                     assert len(source_edge_idxs) <= n_neighbors
-                    neighbors[i, n_neighbors - len(source_neighbors) :] = (
-                        source_neighbors
-                    )
-                    edge_times[i, n_neighbors - len(source_edge_times) :] = (
-                        source_edge_times
-                    )
-                    edge_idxs[i, n_neighbors - len(source_edge_idxs) :] = (
-                        source_edge_idxs
-                    )
+                    neighbors[i, n_neighbors - len(source_neighbors) :] = (source_neighbors)
+                    edge_times[i, n_neighbors - len(source_edge_times) :] = (source_edge_times)
+                    edge_idxs[i, n_neighbors - len(source_edge_idxs) :] = (source_edge_idxs)
         return neighbors, edge_idxs, edge_times
-
-

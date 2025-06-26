@@ -11,7 +11,7 @@ import torch.distributed as dist
 import math
 
 
-def edge_prediction_eval_inductive(
+def edge_prediction_eval_link(
     model, negative_edge_sampler, data, n_neighbors, batch_size=200
 ):
     """
@@ -43,14 +43,7 @@ def edge_prediction_eval_inductive(
             _, negative_samples = negative_edge_sampler.sample(size)
 
             # Compute probabilities for positive and negative edges
-            pos_prob, neg_prob = model.compute_edge_probabilities(
-                sources_batch,
-                destinations_batch,
-                negative_samples,
-                timestamps_batch,
-                edge_idxs_batch,
-                n_neighbors,
-            )
+            pos_prob, neg_prob = model.compute_edge_probabilities(sources_batch,destinations_batch,negative_samples,timestamps_batch,edge_idxs_batch,n_neighbors,)
 
             # Concatenate results and compute metrics
             y_score = np.concatenate([pos_prob.cpu().numpy(), neg_prob.cpu().numpy()])
@@ -153,7 +146,7 @@ def node_classification_eval(
     return (auc_roc, precision, recall, f1, support, all_pred_prob, all_true_labels)
 
 
-def edge_prediction_eval_transductive(
+def edge_prediction_eval_ddp(
     model, negative_edge_sampler, data, n_neighbors, batch_size=200
 ):
     """
@@ -174,6 +167,7 @@ def edge_prediction_eval_transductive(
 
         for k in range(num_batch):
             # Prepare batch data for evaluation
+            # Prepare batch data
             s_idx = k * batch_size
             e_idx = min(num_instance, s_idx + batch_size)
 
