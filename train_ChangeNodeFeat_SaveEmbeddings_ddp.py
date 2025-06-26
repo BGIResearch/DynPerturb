@@ -136,7 +136,7 @@ device_string = "cuda:{}".format(GPU) if torch.cuda.is_available() else "cpu"
 device = torch.device(device_string)
 
 # Compute time statistics for temporal encoding
-mean_time_shift_src, std_time_shift_src, mean_time_shift_dst, std_time_shift_dst = (compute_time_statistics(full_data.sources, full_data.destinations, full_data.timestamps))
+mean_time_shift_src, std_time_shift_src, mean_time_shift_dst, std_time_shift_dst = compute_time_statistics(full_data.sources, full_data.destinations, full_data.timestamps)
 logger.info("Loading the best model for inference...")
 
 # Set model save path (modify as needed)
