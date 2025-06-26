@@ -3,6 +3,7 @@ import torch
 import numpy as np
 from torch import nn
 
+# Abstract base class for message aggregation
 class MessageAggregator(torch.nn.Module):
     """
     Abstract class for the message aggregator module. Given a batch of node ids and
@@ -34,9 +35,11 @@ class MessageAggregator(torch.nn.Module):
         node_id_to_messages = defaultdict(list)
         for i, node_id in enumerate(node_ids):
             node_id_to_messages[node_id].append((messages[i], timestamps[i]))
+            
         return node_id_to_messages
 
 
+# Aggregator that keeps only the last message for each node
 class LastMessageAggregator(MessageAggregator):
     def __init__(self, device):
         super(LastMessageAggregator, self).__init__(device)
@@ -52,16 +55,22 @@ class LastMessageAggregator(MessageAggregator):
         unique_messages = []
         unique_timestamps = []
         to_update_node_ids = []
+        
+        # For each unique node, keep only the last message and timestamp
         for node_id in unique_node_ids:
             if len(messages[node_id]) > 0:
                 to_update_node_ids.append(node_id)
                 unique_messages.append(messages[node_id][-1][0])
                 unique_timestamps.append(messages[node_id][-1][1])
+        
+        # Stack results for batch update
         unique_messages = torch.stack(unique_messages) if len(to_update_node_ids) > 0 else []
         unique_timestamps = torch.stack(unique_timestamps) if len(to_update_node_ids) > 0 else []
+        
         return to_update_node_ids, unique_messages, unique_timestamps
 
 
+# Aggregator that averages all messages for each node
 class MeanMessageAggregator(MessageAggregator):
     def __init__(self, device):
         super(MeanMessageAggregator, self).__init__(device)
@@ -78,17 +87,23 @@ class MeanMessageAggregator(MessageAggregator):
         unique_timestamps = []
         to_update_node_ids = []
         n_messages = 0
+        
+        # For each unique node, average all messages and keep the last timestamp
         for node_id in unique_node_ids:
             if len(messages[node_id]) > 0:
                 n_messages += len(messages[node_id])
                 to_update_node_ids.append(node_id)
                 unique_messages.append(torch.mean(torch.stack([m[0] for m in messages[node_id]]), dim=0))
                 unique_timestamps.append(messages[node_id][-1][1])
+        
+        # Stack results for batch update
         unique_messages = torch.stack(unique_messages) if len(to_update_node_ids) > 0 else []
         unique_timestamps = torch.stack(unique_timestamps) if len(to_update_node_ids) > 0 else []
+        
         return to_update_node_ids, unique_messages, unique_timestamps
 
 
+# Factory function for message aggregator selection
 def get_message_aggregator(aggregator_type, device):
     """
     Factory function to get the appropriate message aggregator.
@@ -104,8 +119,7 @@ def get_message_aggregator(aggregator_type, device):
         raise ValueError("Message aggregator {} not implemented".format(aggregator_type))
 
 
-
-
+# Abstract base class for message function modules
 class MessageFunction(nn.Module):
     """
     Module which computes the message for a given interaction.
@@ -119,11 +133,12 @@ class MessageFunction(nn.Module):
         return None
 
 
+# MLP-based message function
 class MLPMessageFunction(MessageFunction):
     def __init__(self, raw_message_dimension, message_dimension):
         super(MLPMessageFunction, self).__init__()
         # Multi-layer perceptron for message transformation
-        self.mlp = self.layers = nn.Sequential(nn.Linear(raw_message_dimension, raw_message_dimension // 2),nn.ReLU(),nn.Linear(raw_message_dimension // 2, message_dimension),)
+        self.mlp = self.layers = nn.Sequential(nn.Linear(raw_message_dimension, raw_message_dimension // 2), nn.ReLU(), nn.Linear(raw_message_dimension // 2, message_dimension))
 
     def compute_message(self, raw_messages):
         """
@@ -135,6 +150,7 @@ class MLPMessageFunction(MessageFunction):
         return messages
 
 
+# Identity message function (no transformation)
 class IdentityMessageFunction(MessageFunction):
     def compute_message(self, raw_messages):
         """
@@ -145,6 +161,7 @@ class IdentityMessageFunction(MessageFunction):
         return raw_messages
 
 
+# Factory function for message function selection
 def get_message_function(module_type, raw_message_dimension, message_dimension):
     """
     Factory function to get the appropriate message function module.

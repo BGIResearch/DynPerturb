@@ -118,7 +118,7 @@ RESULTS_PATH = f"{RESULTS_DIR}/results.pkl"
 BEST_EMBEDDING_PATH = f"{EMBEDDING_DIR}/embeddings_best.json"
 
 # Load data and features
-(full_data,node_features,edge_features,train_data,val_data,test_data,new_node_val_data,new_node_test_data,) = get_data(DATA, use_ddp=True, use_validation=args.use_validation)
+full_data, node_features, edge_features, train_data, val_data, test_data, new_node_val_data, new_node_test_data, num_nodes = get_data(DATA, use_ddp=True, use_validation=args.use_validation)
 
 # Initialize neighbor finders for training and evaluation
 train_ngh_finder = get_neighbor_finder(train_data, args.uniform)
@@ -145,42 +145,28 @@ if not os.path.exists(MODEL_SAVE_PATH):
     raise FileNotFoundError(f"Best model not found at {MODEL_SAVE_PATH}, please train first.")
 
 # Initialize NetModel
-netmodel = NetModel(
-    neighbor_finder=train_ngh_finder,
-    node_features=node_features,
-    edge_features=edge_features,
-    device=device,
-    n_layers=NUM_LAYER,
-    n_heads=NUM_HEADS,
-    dropout=DROP_OUT,
-    use_memory=USE_MEMORY,
-    message_dimension=MESSAGE_DIM,
-    memory_dimension=MEMORY_DIM,
-    memory_update_at_start=not args.memory_update_at_end,
-    embedding_module_type=args.embedding_module,
-    message_function=args.message_function,
-    aggregator_type=args.aggregator,
-    memory_updater_type=args.memory_updater,
-    n_neighbors=NUM_NEIGHBORS,
-    mean_time_shift_src=mean_time_shift_src,
-    std_time_shift_src=std_time_shift_src,
-    mean_time_shift_dst=mean_time_shift_dst,
-    std_time_shift_dst=std_time_shift_dst,
+netmodel = NetModel(num_nodes=num_nodes,neighbor_finder=train_ngh_finder,node_features=node_features,
+    edge_features=edge_features,device=device,n_layers=NUM_LAYER,n_heads=NUM_HEADS,dropout=DROP_OUT,
+    use_memory=USE_MEMORY,message_dimension=MESSAGE_DIM,memory_dimension=MEMORY_DIM,
+    memory_update_at_start=not args.memory_update_at_end,embedding_module_type=args.embedding_module,
+    message_function=args.message_function,aggregator_type=args.aggregator,
+    memory_updater_type=args.memory_updater,n_neighbors=NUM_NEIGHBORS,
+    mean_time_shift_src=mean_time_shift_src,std_time_shift_src=std_time_shift_src,
+    mean_time_shift_dst=mean_time_shift_dst,std_time_shift_dst=std_time_shift_dst,
     use_destination_embedding_in_message=args.use_destination_embedding_in_message,
-    use_source_embedding_in_message=args.use_source_embedding_in_message,
-    num_classes=NumClasses,
-    mode=MODE,
-)
+    use_source_embedding_in_message=args.use_source_embedding_in_message,num_classes=NumClasses,mode=MODE)
 
 netmodel = netmodel.to(device)
 netmodel.load_state_dict(torch.load(MODEL_SAVE_PATH), strict=False)
 netmodel.eval()
+
 logger.info(f"Successfully loaded the best model from {MODEL_SAVE_PATH}")
 logger.info("Starting batched inference with memory propagation (no per-time grouping)...")
 
 # Initialize memory if enabled
 if USE_MEMORY:
     netmodel.memory.__init_memory__()
+    
 netmodel.set_neighbor_finder(full_ngh_finder)
 
 saved_embeddings = defaultdict(list)
@@ -195,34 +181,46 @@ num_events = len(sources)
 # Compute and save embeddings in batches with exception handling
 with torch.no_grad():
     try:
+        # Loop over all events in batches
         for start in range(0, num_events, BATCH_SIZE):
             batch_start_time = time.time()
             end = min(start + BATCH_SIZE, num_events)
+            
+            # Prepare batch tensors
             src = torch.from_numpy(sources[start:end]).to(device)
             dst = torch.from_numpy(destinations[start:end]).to(device)
             ts = torch.from_numpy(timestamps[start:end]).to(device)
             eid = torch.from_numpy(edge_idxs[start:end]).to(device)
             neg = dst.clone()
+            
+            # Compute temporal embeddings for source and destination nodes
             emb_src, emb_dst, _ = netmodel.compute_temporal_embeddings(src, dst, neg, ts, eid)
+            
+            # Save embeddings for each node in the batch
             for i in range(len(src)):
                 s_id = int(src[i])
                 d_id = int(dst[i])
                 t_val = float(ts[i])
-                saved_embeddings[s_id].append({"timestamp": t_val,"embedding": emb_src[i].detach().cpu().numpy().tolist()})
-                saved_embeddings[d_id].append({"timestamp": t_val,"embedding": emb_dst[i].detach().cpu().numpy().tolist()})
+                saved_embeddings[s_id].append({"timestamp": t_val, "embedding": emb_src[i].detach().cpu().numpy().tolist()})
+                saved_embeddings[d_id].append({"timestamp": t_val, "embedding": emb_dst[i].detach().cpu().numpy().tolist()})
+            
             batch_end_time = time.time()
             print(f"Batch {start // BATCH_SIZE + 1} processed in {batch_end_time - batch_start_time:.2f} seconds")
+        
     except Exception as e:
+        # Handle any errors during embedding computation
         print(f"[Warning] Embedding computation failed: {e}")
 
 # Save embeddings as JSON with numpy type handling and exception protection
 Path(EMBEDDING_DIR).mkdir(parents=True, exist_ok=True)
 save_path = os.path.join(EMBEDDING_DIR, f"embeddings_{args.prefix}.json")
+
 try:
     with open(save_path, "w") as f:
         json.dump(saved_embeddings, f, default=str)
 except Exception as e:
     print(f"[Warning] Failed to save embeddings: {e}")
+    
 logger.info(f"Embeddings with memory propagation saved to {save_path}")
 # Log: total number of saved embedding points
 total_embs = sum(len(v) for v in saved_embeddings.values())

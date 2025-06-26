@@ -20,15 +20,16 @@ from sklearn.metrics import confusion_matrix
 import seaborn as sns
 import os
 from sklearn.utils.class_weight import compute_class_weight
+
 # Set random seeds for reproducibility
 random.seed(0)
 np.random.seed(0)
 torch.manual_seed(0)
 
-# Set working directory (use relative path or comment out if not needed)
-os.chdir("./")  # Use project root as working directory. Adjust if needed.
+# Set working directory
+os.chdir("./")
 
-# Argument parser for command-line options
+# Parse command-line arguments
 parser = argparse.ArgumentParser("NetModel self-supervised training")
 parser.add_argument("-d", "--data", type=str, help="Dataset name (e.g., wikipedia or reddit)", default="HumanBone")
 parser.add_argument("--bs", type=int, default=64, help="Batch size")
@@ -95,18 +96,17 @@ NUM_CLASSES = args.num_classes
 # Create directories for saving models and checkpoints
 Path("./saved_models/").mkdir(parents=True, exist_ok=True)
 Path("./saved_checkpoints/").mkdir(parents=True, exist_ok=True)
-MODEL_SAVE_PATH = (f"./saved_models/{args.prefix}-{args.data}" + "node-classification.pth")
+MODEL_SAVE_PATH = (f"./saved_models/{args.prefix} - {args.data}" + "node-classification.pth")
 
 
 def get_checkpoint_path(epoch):
-    return (f"./saved_checkpoints/{args.prefix}-{args.data}-{epoch}node-classification.pth")
+    return (f"./saved_checkpoints/{args.prefix} - {args.data} - {epoch}node-classification.pth")
 
-
-# Output directory for figures
+# Create output directory for figures
 output_dir = "./figs"
 os.makedirs(output_dir, exist_ok=True)
 
-# Set up logger
+# Set up logger for training and evaluation
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
 logger.setLevel(logging.DEBUG)
@@ -124,35 +124,36 @@ logging.info("Logger initialized.")
 
 num_classes = NUM_CLASSES
 
-# Load data and features
-(full_data,node_features,edge_features,train_data,val_data,test_data,new_node_val_data,new_node_test_data,) = get_data(DATA, use_ddp=True, use_validation=args.use_validation)
+# Load data and features for training, validation, and testing
+full_data, node_features, edge_features, train_data, val_data, test_data, new_node_val_data, new_node_test_data, num_nodes = get_data(DATA, use_ddp=True, use_validation=args.use_validation)
 
 max_idx = int(max(full_data.unique_nodes))
 
-# Initialize neighbor finders
+# Initialize neighbor finders for temporal graph
 train_ngh_finder = get_neighbor_finder(train_data, uniform=UNIFORM, max_node_idx=max_idx)
 # Also add max_node_idx=max_idx here to ensure type consistency and avoid float64 errors
 full_ngh_finder = get_neighbor_finder(full_data, args.uniform, max_node_idx=max_idx)
 
-# Initialize negative edge samplers
+# Initialize negative edge samplers for link prediction
 train_rand_sampler = RandEdgeSampler(train_data.sources, train_data.destinations)
 val_rand_sampler = RandEdgeSampler(full_data.sources, full_data.destinations, seed=0)
 nn_val_rand_sampler = RandEdgeSampler(new_node_val_data.sources, new_node_val_data.destinations, seed=1)
 test_rand_sampler = RandEdgeSampler(full_data.sources, full_data.destinations, seed=2)
 nn_test_rand_sampler = RandEdgeSampler(new_node_test_data.sources, new_node_test_data.destinations, seed=3)
 
-# Set device for training
+# Set device for distributed training
 device_string = "cuda:{}".format(GPU) if torch.cuda.is_available() else "cpu"
 device = torch.device(device_string)
 
 # Compute time statistics for temporal encoding
 mean_time_shift_src, std_time_shift_src, mean_time_shift_dst, std_time_shift_dst = (compute_time_statistics(full_data.sources, full_data.destinations, full_data.timestamps))
 
+# Main distributed training loop
 for i in range(args.n_runs):
-    results_path = ("./results/{}_node_classification_{}.pkl".format(args.prefix, i) if i > 0 else "./results/{}_node_classification.pkl".format(args.prefix)
-    )
+    results_path = ("./results/{}_node_classification_{}.pkl".format(args.prefix, i) if i > 0 else "./results/{}_node_classification.pkl".format(args.prefix))
     Path("./results/").mkdir(parents=True, exist_ok=True)
     local_rank = int(os.environ.get("LOCAL_RANK", 0))
+    
     # Set current process GPU
     torch.cuda.set_device(local_rank)
     device = torch.device("cuda", local_rank)
@@ -162,35 +163,19 @@ for i in range(args.n_runs):
     rank = dist.get_rank()
     world_size = dist.get_world_size()
 
+    # Initialize model and DDP
     netmodel = NetModel(
-        neighbor_finder=train_ngh_finder,
-        node_features=node_features,
-        edge_features=edge_features,
-        device=device,
-        n_layers=NUM_LAYER,
-        n_heads=NUM_HEADS,
-        dropout=DROP_OUT,
-        use_memory=USE_MEMORY,
-        message_dimension=MESSAGE_DIM,
-        memory_dimension=MEMORY_DIM,
-        memory_update_at_start=not args.memory_update_at_end,
-        embedding_module_type=args.embedding_module,
-        message_function=args.message_function,
-        aggregator_type=args.aggregator,
-        memory_updater_type=args.memory_updater,
-        n_neighbors=NUM_NEIGHBORS,
-        mean_time_shift_src=mean_time_shift_src,
-        std_time_shift_src=std_time_shift_src,
-        mean_time_shift_dst=mean_time_shift_dst,
-        std_time_shift_dst=std_time_shift_dst,
-        use_destination_embedding_in_message=args.use_destination_embedding_in_message,
-        use_source_embedding_in_message=args.use_source_embedding_in_message,
-        num_classes=num_classes,
-        mode=MODE,
-    )
+        num_nodes = num_nodes, neighbor_finder = train_ngh_finder, node_features = node_features, edge_features = edge_features,
+        device = device, n_layers = NUM_LAYER, n_heads = NUM_HEADS, dropout = DROP_OUT, use_memory = USE_MEMORY,
+        message_dimension = MESSAGE_DIM, memory_dimension = MEMORY_DIM, memory_update_at_start = not args.memory_update_at_end,
+        embedding_module_type = args.embedding_module, message_function = args.message_function, aggregator_type = args.aggregator,
+        memory_updater_type = args.memory_updater, n_neighbors = NUM_NEIGHBORS, mean_time_shift_src = mean_time_shift_src,
+        std_time_shift_src = std_time_shift_src, mean_time_shift_dst = mean_time_shift_dst, std_time_shift_dst = std_time_shift_dst,
+        use_destination_embedding_in_message = args.use_destination_embedding_in_message,
+        use_source_embedding_in_message = args.use_source_embedding_in_message, num_classes = num_classes, mode = MODE)
 
     netmodel = netmodel.to(device)
-    netmodel = DDP(netmodel,device_ids=[local_rank],output_device=local_rank,find_unused_parameters=True,)
+    netmodel = DDP(netmodel, device_ids=[local_rank], output_device=local_rank, find_unused_parameters=True)
 
     num_instance = len(train_data.sources)
     num_batch = math.ceil(num_instance / BATCH_SIZE)
@@ -203,37 +188,30 @@ for i in range(args.n_runs):
     best_combined_auc = -float("inf")
     best_model_epoch = None
 
-
-
-    weights = compute_class_weight(
-        "balanced", classes=np.arange(num_classes), y=train_data.labels
-    )
+    # Compute class weights for imbalanced node classification
+    weights = compute_class_weight("balanced", classes=np.arange(num_classes), y=train_data.labels)
     weights = torch.tensor(weights, dtype=torch.float).to(device)
-
     early_stopper = EarlyStopMonitor_ddp(max_round=args.patience)
-    train_dataset = torch.utils.data.TensorDataset(torch.from_numpy(train_data.sources),torch.from_numpy(train_data.destinations),torch.from_numpy(train_data.timestamps),torch.from_numpy(train_data.edge_idxs),torch.from_numpy(train_data.labels),)
-
-    train_sampler = DistributedSampler(train_dataset,num_replicas=dist.get_world_size(),rank=dist.get_rank(),shuffle=True,)
-
-    train_loader = DataLoader(train_dataset,batch_size=BATCH_SIZE,sampler=train_sampler,num_workers=4,pin_memory=True,drop_last=True,)
+    
+    train_dataset = torch.utils.data.TensorDataset(torch.from_numpy(train_data.sources), torch.from_numpy(train_data.destinations), torch.from_numpy(train_data.timestamps), torch.from_numpy(train_data.edge_idxs), torch.from_numpy(train_data.labels))
+    train_sampler = DistributedSampler(train_dataset, num_replicas = dist.get_world_size(), rank = dist.get_rank(), shuffle = True)
+    train_loader = DataLoader(train_dataset, batch_size = BATCH_SIZE, sampler = train_sampler, num_workers = 4, pin_memory = True, drop_last = True)
     # Initialize val_memory_backup to avoid undefined variable risk
     val_memory_backup = None
 
+    # Epoch training loop
     for epoch in range(args.n_epoch):
         logger.info(f"--- Epoch {epoch + 1}/{args.n_epoch} ---")
         start_epoch = time.time()
-
-        # Initialize memory at each epoch if enabled
         if USE_MEMORY:
             netmodel.module.memory.__init_memory__()
-
-        # Set neighbor finder for training
         netmodel.module.set_neighbor_finder(train_ngh_finder)
 
         optimizer.zero_grad()
         netmodel = netmodel.train()
         m_loss = []
 
+        # Batch training loop
         for batch in train_loader:
             sources_batch, dest_batch, ts_batch, edge_idxs_batch, labels_batch = batch
             sources_batch = sources_batch.to(device, non_blocking=True)
@@ -257,9 +235,10 @@ for i in range(args.n_runs):
                 destinations_batch = torch.tensor(dest_batch, dtype=torch.long).to(device)
                 negatives_batch = torch.tensor(negatives_batch, dtype=torch.long).to(device)
                 edge_idxs_batch = torch.tensor(edge_idxs_batch, dtype=torch.long).to(device)
+                
                 # For timestamps, float type is okay as they represent time
                 timestamps_batch = torch.tensor(timestamps_batch, dtype=torch.float32).to(device)
-                pos_score, neg_score, node_classification_logits = netmodel(sources_batch,destinations_batch,negatives_batch,timestamps_batch,edge_idxs_batch,)
+                pos_score, neg_score, node_classification_logits = netmodel(sources_batch, destinations_batch, negatives_batch, timestamps_batch, edge_idxs_batch)
             except Exception as e:
                 print(f"Error in model forward: {e}")
                 continue
@@ -317,15 +296,15 @@ for i in range(args.n_runs):
                 train_memory_backup = None
 
         # Evaluate link prediction on validation set
-        (val_ap_link_prediction,val_auc_link_prediction,val_precision_link_prediction,val_recall_link_prediction,val_f1_link_prediction,val_acc_link_prediction,) = edge_prediction_eval_ddp(netmodel,val_rand_sampler,val_data,NUM_NEIGHBORS,BATCH_SIZE,)
+        val_ap_link_prediction,val_auc_link_prediction,val_precision_link_prediction,val_recall_link_prediction,val_f1_link_prediction,val_acc_link_prediction = edge_prediction_eval_ddp(netmodel,val_rand_sampler,val_data,NUM_NEIGHBORS,BATCH_SIZE)
 
         # Evaluate node classification on validation set
-        (val_auc_node_classification,precision,recall,f1,support,pred_prob,true_labels_val,) = node_classification_eval(netmodel,val_data,full_data.edge_idxs,BATCH_SIZE,NUM_NEIGHBORS,num_classes,)
-        logger.info(
-            f"[Epoch {epoch + 1}] Val Link Prediction AUC: {val_auc_link_prediction:.4f}"
-        )
+        val_auc_node_classification,precision,recall,f1,support,pred_prob,true_labels_val = node_classification_eval(netmodel,val_data,full_data.edge_idxs,BATCH_SIZE,NUM_NEIGHBORS,num_classes)
+        
+        logger.info(f"[Epoch {epoch + 1}] Val Link Prediction AUC: {val_auc_link_prediction:.4f}")
         for i in range(len(val_auc_node_classification)):
             logger.info(f"[Epoch {epoch + 1}] Class {i} - AUC: {val_auc_node_classification[i]:.4f}, Precision: {precision[i]:.4f}, Recall: {recall[i]:.4f}, F1: {f1[i]:.4f}, Support: {support[i]:.4f}")
+        
         if USE_MEMORY:
             try:
                 val_memory_backup = netmodel.module.memory.backup_memory()
@@ -334,7 +313,7 @@ for i in range(args.n_runs):
             except Exception as e:
                 print(f"Error in val/train memory backup/restore: {e}")
 
-        (nn_val_ap, nn_val_auc, nn_val_precision, nn_val_recall, nn_val_f1, nn_val_acc) = edge_prediction_eval_ddp(model=netmodel, negative_edge_sampler=val_rand_sampler, data=new_node_val_data, n_neighbors=NUM_NEIGHBORS)
+        nn_val_ap, nn_val_auc, nn_val_precision, nn_val_recall, nn_val_f1, nn_val_acc = edge_prediction_eval_ddp(model=netmodel, negative_edge_sampler=val_rand_sampler, data=new_node_val_data, n_neighbors=NUM_NEIGHBORS)
 
         if USE_MEMORY:
             try:
@@ -363,6 +342,7 @@ for i in range(args.n_runs):
                 torch.save(netmodel.module.state_dict(), get_checkpoint_path(epoch))
             except Exception as e:
                 print(f"Error saving model: {e}")
+                
             logger.info(f" Best model saved at epoch {epoch + 1} with Combined AUC: {best_combined_auc:.4f}")
             logger.info(f"   ↳ Link Prediction AUC: {val_auc_link_prediction:.4f}")
             logger.info(f"   ↳ Node Classification F1 (Mean): {val_f1_node_classification_mean:.4f}")
@@ -383,9 +363,7 @@ for i in range(args.n_runs):
         raise RuntimeError("No best model was saved. Check if training diverged or AUC is invalid.")
 
     try:
-        netmodel.module.load_state_dict(
-            torch.load(get_checkpoint_path(best_model_epoch))
-        )
+        netmodel.module.load_state_dict(torch.load(get_checkpoint_path(best_model_epoch)))
     except Exception as e:
         print(f"Error loading best model: {e}")
 
@@ -397,10 +375,8 @@ for i in range(args.n_runs):
             val_memory_backup = None
 
     netmodel.module.embedding_module.neighbor_finder = full_ngh_finder
-    (test_ap_link_prediction, test_auc_link_prediction, test_precision_link_prediction, test_recall_link_prediction, test_f1_link_prediction, test_acc_link_prediction) = edge_prediction_eval_ddp(netmodel, test_rand_sampler, test_data, NUM_NEIGHBORS, BATCH_SIZE)
-    (test_auc_node_classification, precision, recall, f1, support, pred_prob, true_labels) = node_classification_eval(netmodel, test_data, full_data.edge_idxs, BATCH_SIZE, NUM_NEIGHBORS, num_classes)
-
-    # Restore memory if enabled
+    test_ap_link_prediction, test_auc_link_prediction, test_precision_link_prediction, test_recall_link_prediction, test_f1_link_prediction, test_acc_link_prediction = edge_prediction_eval_ddp(netmodel, test_rand_sampler, test_data, NUM_NEIGHBORS, BATCH_SIZE)
+    test_auc_node_classification, precision, recall, f1, support, pred_prob, true_labels = node_classification_eval(netmodel, test_data, full_data.edge_idxs, BATCH_SIZE, NUM_NEIGHBORS, num_classes)
     if USE_MEMORY:
         try:
             netmodel.module.memory.restore_memory(val_memory_backup)
@@ -408,7 +384,7 @@ for i in range(args.n_runs):
             print(f"[Warning] Failed to restore memory: {e}")
 
     # Evaluate edge prediction for new node test set
-    (nn_test_ap,nn_test_auc,nn_test_precision,nn_test_recall,nn_test_f1,nn_test_acc,) = edge_prediction_eval_ddp(model=netmodel, negative_edge_sampler=nn_test_rand_sampler, data=new_node_test_data, n_neighbors=NUM_NEIGHBORS)
+    nn_test_ap, nn_test_auc, nn_test_precision, nn_test_recall, nn_test_f1, nn_test_acc = edge_prediction_eval_ddp(model=netmodel, negative_edge_sampler=nn_test_rand_sampler, data=new_node_test_data, n_neighbors=NUM_NEIGHBORS)
 
     # Plot and save confusion matrix and AUC bar chart
     try:
@@ -424,7 +400,7 @@ for i in range(args.n_runs):
         plt.ylabel("True Label")
         plt.title("Confusion Matrix")
         plt.tight_layout()
-        plt.savefig(os.path.join(output_dir, f"{args.prefix}-{args.data}_confusion_matrix.pdf"))
+        plt.savefig(os.path.join(output_dir, f"{args.prefix} - {args.data}_confusion_matrix.pdf"))
         try:
             plt.close()
         except Exception:
@@ -437,21 +413,21 @@ for i in range(args.n_runs):
         plt.ylabel("True Label")
         plt.title("Confusion Matrix (Normalized)")
         plt.tight_layout()
-        plt.savefig(os.path.join(output_dir, f"{args.prefix}-{args.data}_confusion_matrix_normalized.pdf"))
+        plt.savefig(os.path.join(output_dir, f"{args.prefix} - {args.data}_confusion_matrix_normalized.pdf"))
         try:
             plt.close()
         except Exception:
             pass
 
         plt.figure(figsize=(10, 5))
-        auc_bar = (test_auc_node_classification if "test_auc_node_classification" in locals()else np.zeros(num_classes))
+        auc_bar = (test_auc_node_classification if "test_auc_node_classification" in locals() else np.zeros(num_classes))
         plt.bar(class_names, auc_bar)
         plt.ylabel("AUC Score")
         plt.title("Per-Class AUC")
         plt.ylim(0, 1.05)
         plt.xticks(rotation=45)
         plt.tight_layout()
-        plt.savefig(os.path.join(output_dir, f"{args.prefix}-{args.data}_auc_bar_chart.pdf"))
+        plt.savefig(os.path.join(output_dir, f"{args.prefix} - {args.data}_auc_bar_chart.pdf"))
         try:
             plt.close()
         except Exception:
