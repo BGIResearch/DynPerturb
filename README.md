@@ -156,5 +156,4 @@ python train_ChangeNodeFeat_SaveEmbeddings_ddp.py --data mouse --bs 64 --n_epoch
 
 
 ## Contact
-For questions or support, feel free to reach out:
-- **Your Name**: [your_email@example.com]
+
