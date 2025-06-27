@@ -22,16 +22,7 @@ class Data:
         self.n_unique_nodes = len(self.unique_nodes)
 
 
-# get_data: Load and split temporal graph data for node classification/link prediction
-# Args:
-#   dataset_name: dataset prefix (str)
-#   use_ddp: use distributed data parallel mode (bool)
-#   randomize_features: randomize node features (bool)
-#   different_new_nodes_between_val_and_test: not used
-#   use_validation: not used
-#   label_processing: treat as multi-label task (bool)
-# Returns:
-#   full_data, node_features, edge_features, train_data, val_data, test_data, new_node_val_data, new_node_test_data, num_nodes
+
 def get_data(dataset_name,use_ddp=False,randomize_features=False,different_new_nodes_between_val_and_test=False,use_validation=False,label_processing=False):
     """
     General data loader for node classification/link prediction, single/multi-label.

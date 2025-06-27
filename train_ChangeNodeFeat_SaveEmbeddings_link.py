@@ -1,4 +1,4 @@
-from model.NetModel import NetModel
+from model.DynPertubModel import DynPertubModel
 from utils.DataLoader import get_data, compute_time_statistics
 from utils.utils import RandEdgeSampler, get_neighbor_finder
 import sys
@@ -22,7 +22,7 @@ torch.manual_seed(0)
 np.random.seed(0)
 
 # Argument parser for command-line options
-parser = argparse.ArgumentParser("NetModel self-supervised training")
+parser = argparse.ArgumentParser("DynPertubModel self-supervised training")
 parser.add_argument("-d", "--data", type=str, help="Dataset name (e.g., wikipedia or reddit)", default="celltype32")
 parser.add_argument("--bs", type=int, default=200, help="Batch size")
 parser.add_argument("--prefix", type=str, default="", help="Prefix for checkpoint naming")
@@ -138,8 +138,8 @@ MODEL_SAVE_PATH = f'./'  # best model path
 if not os.path.exists(MODEL_SAVE_PATH):
     raise FileNotFoundError(f"Best model not found at {MODEL_SAVE_PATH}, please train first.")
 
-# Initialize NetModel for link prediction
-netmodel = NetModel(
+# Initialize DynPertubModel for link prediction
+dynpertub_model = DynPertubModel(
     num_nodes = num_nodes, neighbor_finder = train_ngh_finder, node_features = node_features,
     edge_features = edge_features, device = device, n_layers = NUM_LAYER, n_heads = NUM_HEADS,
     dropout = DROP_OUT, use_memory = USE_MEMORY, message_dimension = MESSAGE_DIM, memory_dimension = MEMORY_DIM,
@@ -151,17 +151,17 @@ netmodel = NetModel(
     use_source_embedding_in_message = args.use_source_embedding_in_message, num_classes = NumClasses, mode = MODE
 )
 
-netmodel = netmodel.to(device)
-netmodel.load_state_dict(torch.load(MODEL_SAVE_PATH), strict=False)
-netmodel.eval()
+dynpertub_model = dynpertub_model.to(device)
+dynpertub_model.load_state_dict(torch.load(MODEL_SAVE_PATH), strict=False)
+dynpertub_model.eval()
 logger.info(f'Successfully loaded the best model from {MODEL_SAVE_PATH}')
 logger.info("Starting batched inference with memory propagation (no per-time grouping)...")
 
 # Initialize memory if enabled
 if USE_MEMORY:
-    netmodel.memory.__init_memory__()
+    dynpertub_model.memory.__init_memory__()
 
-netmodel.set_neighbor_finder(full_ngh_finder)
+dynpertub_model.set_neighbor_finder(full_ngh_finder)
 
 saved_embeddings = defaultdict(list)
 
@@ -188,7 +188,7 @@ with torch.no_grad():
             neg = dst.clone()
             
             # Compute temporal embeddings for source and destination nodes
-            emb_src, emb_dst, _ = netmodel.compute_temporal_embeddings(src, dst, neg, ts, eid)
+            emb_src, emb_dst, _ = dynpertub_model.compute_temporal_embeddings(src, dst, neg, ts, eid)
             
             # Save embeddings for each node in the batch
             for i in range(len(src)):
