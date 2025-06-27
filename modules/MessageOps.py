@@ -1,7 +1,7 @@
-from collections import defaultdict
 import torch
 import numpy as np
 from torch import nn
+from collections import defaultdict
 
 # Abstract base class for message aggregation
 class MessageAggregator(torch.nn.Module):

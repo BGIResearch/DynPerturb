@@ -1,25 +1,26 @@
-from evaluation.evaluation import node_classification_eval, edge_prediction_eval_ddp
-from model.DynPertubModel import DynPertubModel
-from utils.DataLoader import get_data, compute_time_statistics
-from utils.utils import EarlyStopMonitor_ddp, RandEdgeSampler, get_neighbor_finder
+
 import logging
 import math
 import time
 import sys
 import random
 import argparse
-from pathlib import Path
 import torch
-import numpy as np
 import torch.distributed as dist
-from torch.nn.parallel import DistributedDataParallel as DDP
-from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
-from torch.utils.data.distributed import DistributedSampler
-from sklearn.metrics import confusion_matrix
+import numpy as np
 import seaborn as sns
 import os
 from sklearn.utils.class_weight import compute_class_weight
+from evaluation.evaluation import node_classification_eval, edge_prediction_eval_ddp
+from model.DynPerturbModel import DynPerturbModel
+from utils.DataLoader import get_data, compute_time_statistics
+from utils.utils import EarlyStopMonitor_ddp, RandEdgeSampler, get_neighbor_finder
+from torch.utils.data.distributed import DistributedSampler
+from sklearn.metrics import confusion_matrix
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.utils.data import DataLoader
+from pathlib import Path
 
 # Set random seeds for reproducibility
 random.seed(0)
@@ -30,7 +31,7 @@ torch.manual_seed(0)
 os.chdir("./")
 
 # Parse command-line arguments
-parser = argparse.ArgumentParser("DynPertubModel self-supervised training")
+parser = argparse.ArgumentParser("DynPerturbModel self-supervised training")
 parser.add_argument("-d", "--data", type=str, help="Dataset name (e.g., wikipedia or reddit)", default="HumanBone")
 parser.add_argument("--bs", type=int, default=64, help="Batch size")
 parser.add_argument("--prefix", type=str, default="", help="Prefix for checkpoint naming")
@@ -164,7 +165,7 @@ for i in range(args.n_runs):
     world_size = dist.get_world_size()
 
     # Initialize model and DDP
-    dynpertub_model = DynPertubModel(
+    dynperturb_model = DynPerturbModel(
         num_nodes = num_nodes, neighbor_finder = train_ngh_finder, node_features = node_features, edge_features = edge_features,
         device = device, n_layers = NUM_LAYER, n_heads = NUM_HEADS, dropout = DROP_OUT, use_memory = USE_MEMORY,
         message_dimension = MESSAGE_DIM, memory_dimension = MEMORY_DIM, memory_update_at_start = not args.memory_update_at_end,
@@ -174,13 +175,13 @@ for i in range(args.n_runs):
         use_destination_embedding_in_message = args.use_destination_embedding_in_message,
         use_source_embedding_in_message = args.use_source_embedding_in_message, num_classes = num_classes, mode = MODE)
 
-    dynpertub_model = dynpertub_model.to(device)
-    dynpertub_model = DDP(dynpertub_model, device_ids=[local_rank], output_device=local_rank, find_unused_parameters=True)
+    dynperturb_model = dynperturb_model.to(device)
+    dynperturb_model = DDP(dynperturb_model, device_ids=[local_rank], output_device=local_rank, find_unused_parameters=True)
 
     num_instance = len(train_data.sources)
     num_batch = math.ceil(num_instance / BATCH_SIZE)
 
-    optimizer = torch.optim.Adam(dynpertub_model.parameters(), lr=args.lr, weight_decay=1e-5)
+    optimizer = torch.optim.Adam(dynperturb_model.parameters(), lr=args.lr, weight_decay=1e-5)
 
     val_aucs = []
     train_losses = []
@@ -204,11 +205,11 @@ for i in range(args.n_runs):
         logger.info(f"--- Epoch {epoch + 1}/{args.n_epoch} ---")
         start_epoch = time.time()
         if USE_MEMORY:
-            dynpertub_model.module.memory.__init_memory__()
-        dynpertub_model.module.set_neighbor_finder(train_ngh_finder)
+            dynperturb_model.module.memory.__init_memory__()
+        dynperturb_model.module.set_neighbor_finder(train_ngh_finder)
 
         optimizer.zero_grad()
-        dynpertub_model = dynpertub_model.train()
+        dynperturb_model = dynperturb_model.train()
         m_loss = []
 
         # Batch training loop
@@ -238,7 +239,7 @@ for i in range(args.n_runs):
                 
                 # For timestamps, float type is okay as they represent time
                 timestamps_batch = torch.tensor(timestamps_batch, dtype=torch.float32).to(device)
-                pos_score, neg_score, node_classification_logits = dynpertub_model(sources_batch, destinations_batch, negatives_batch, timestamps_batch, edge_idxs_batch)
+                pos_score, neg_score, node_classification_logits = dynperturb_model(sources_batch, destinations_batch, negatives_batch, timestamps_batch, edge_idxs_batch)
             except Exception as e:
                 print(f"Error in model forward: {e}")
                 continue
@@ -281,25 +282,25 @@ for i in range(args.n_runs):
 
         if USE_MEMORY:
             try:
-                dynpertub_model.module.memory.detach_memory()
+                dynperturb_model.module.memory.detach_memory()
             except Exception as e:
                 print(f"Error in detach_memory: {e}")
 
         # Validation phase
-        dynpertub_model.module.set_neighbor_finder(full_ngh_finder)
+        dynperturb_model.module.set_neighbor_finder(full_ngh_finder)
 
         if USE_MEMORY:
             try:
-                train_memory_backup = dynpertub_model.module.memory.backup_memory()
+                train_memory_backup = dynperturb_model.module.memory.backup_memory()
             except Exception as e:
                 print(f"Error in backup_memory: {e}")
                 train_memory_backup = None
 
         # Evaluate link prediction on validation set
-        val_ap_link_prediction,val_auc_link_prediction,val_precision_link_prediction,val_recall_link_prediction,val_f1_link_prediction,val_acc_link_prediction = edge_prediction_eval_ddp(dynpertub_model,val_rand_sampler,val_data,NUM_NEIGHBORS,BATCH_SIZE)
+        val_ap_link_prediction,val_auc_link_prediction,val_precision_link_prediction,val_recall_link_prediction,val_f1_link_prediction,val_acc_link_prediction = edge_prediction_eval_ddp(dynperturb_model,val_rand_sampler,val_data,NUM_NEIGHBORS,BATCH_SIZE)
 
         # Evaluate node classification on validation set
-        val_auc_node_classification,precision,recall,f1,support,pred_prob,true_labels_val = node_classification_eval(dynpertub_model,val_data,full_data.edge_idxs,BATCH_SIZE,NUM_NEIGHBORS,num_classes)
+        val_auc_node_classification,precision,recall,f1,support,pred_prob,true_labels_val = node_classification_eval(dynperturb_model,val_data,full_data.edge_idxs,BATCH_SIZE,NUM_NEIGHBORS,num_classes)
         
         logger.info(f"[Epoch {epoch + 1}] Val Link Prediction AUC: {val_auc_link_prediction:.4f}")
         for i in range(len(val_auc_node_classification)):
@@ -307,17 +308,17 @@ for i in range(args.n_runs):
         
         if USE_MEMORY:
             try:
-                val_memory_backup = dynpertub_model.module.memory.backup_memory()
+                val_memory_backup = dynperturb_model.module.memory.backup_memory()
                 if train_memory_backup is not None:
-                    dynpertub_model.module.memory.restore_memory(train_memory_backup)
+                    dynperturb_model.module.memory.restore_memory(train_memory_backup)
             except Exception as e:
                 print(f"Error in val/train memory backup/restore: {e}")
 
-        nn_val_ap, nn_val_auc, nn_val_precision, nn_val_recall, nn_val_f1, nn_val_acc = edge_prediction_eval_ddp(model=dynpertub_model, negative_edge_sampler=val_rand_sampler, data=new_node_val_data, n_neighbors=NUM_NEIGHBORS)
+        nn_val_ap, nn_val_auc, nn_val_precision, nn_val_recall, nn_val_f1, nn_val_acc = edge_prediction_eval_ddp(model=dynperturb_model, negative_edge_sampler=val_rand_sampler, data=new_node_val_data, n_neighbors=NUM_NEIGHBORS)
 
         if USE_MEMORY:
             try:
-                dynpertub_model.module.memory.restore_memory(val_memory_backup)
+                dynperturb_model.module.memory.restore_memory(val_memory_backup)
             except Exception as e:
                 print(f"Error in restore_memory: {e}")
 
@@ -339,7 +340,7 @@ for i in range(args.n_runs):
             best_combined_auc = combined_auc
             best_model_epoch = epoch
             try:
-                torch.save(dynpertub_model.module.state_dict(), get_checkpoint_path(epoch))
+                torch.save(dynperturb_model.module.state_dict(), get_checkpoint_path(epoch))
             except Exception as e:
                 print(f"Error saving model: {e}")
                 
@@ -349,7 +350,7 @@ for i in range(args.n_runs):
 
     if dist.get_rank() == 0:
         try:
-            torch.save(dynpertub_model.module.state_dict(), get_checkpoint_path(epoch))
+            torch.save(dynperturb_model.module.state_dict(), get_checkpoint_path(epoch))
         except Exception as e:
             print(f"Error saving model: {e}")
 
@@ -363,28 +364,28 @@ for i in range(args.n_runs):
         raise RuntimeError("No best model was saved. Check if training diverged or AUC is invalid.")
 
     try:
-        dynpertub_model.module.load_state_dict(torch.load(get_checkpoint_path(best_model_epoch)))
+        dynperturb_model.module.load_state_dict(torch.load(get_checkpoint_path(best_model_epoch)))
     except Exception as e:
         print(f"Error loading best model: {e}")
 
     if USE_MEMORY:
         try:
-            val_memory_backup = dynpertub_model.module.memory.backup_memory()
+            val_memory_backup = dynperturb_model.module.memory.backup_memory()
         except Exception as e:
             print(f"Error in backup_memory: {e}")
             val_memory_backup = None
 
-    dynpertub_model.module.embedding_module.neighbor_finder = full_ngh_finder
-    test_ap_link_prediction, test_auc_link_prediction, test_precision_link_prediction, test_recall_link_prediction, test_f1_link_prediction, test_acc_link_prediction = edge_prediction_eval_ddp(dynpertub_model, test_rand_sampler, test_data, NUM_NEIGHBORS, BATCH_SIZE)
-    test_auc_node_classification, precision, recall, f1, support, pred_prob, true_labels = node_classification_eval(dynpertub_model, test_data, full_data.edge_idxs, BATCH_SIZE, NUM_NEIGHBORS, num_classes)
+    dynperturb_model.module.embedding_module.neighbor_finder = full_ngh_finder
+    test_ap_link_prediction, test_auc_link_prediction, test_precision_link_prediction, test_recall_link_prediction, test_f1_link_prediction, test_acc_link_prediction = edge_prediction_eval_ddp(dynperturb_model, test_rand_sampler, test_data, NUM_NEIGHBORS, BATCH_SIZE)
+    test_auc_node_classification, precision, recall, f1, support, pred_prob, true_labels = node_classification_eval(dynperturb_model, test_data, full_data.edge_idxs, BATCH_SIZE, NUM_NEIGHBORS, num_classes)
     if USE_MEMORY:
         try:
-            dynpertub_model.module.memory.restore_memory(val_memory_backup)
+            dynperturb_model.module.memory.restore_memory(val_memory_backup)
         except Exception as e:
             print(f"[Warning] Failed to restore memory: {e}")
 
     # Evaluate edge prediction for new node test set
-    nn_test_ap, nn_test_auc, nn_test_precision, nn_test_recall, nn_test_f1, nn_test_acc = edge_prediction_eval_ddp(model=dynpertub_model, negative_edge_sampler=nn_test_rand_sampler, data=new_node_test_data, n_neighbors=NUM_NEIGHBORS)
+    nn_test_ap, nn_test_auc, nn_test_precision, nn_test_recall, nn_test_f1, nn_test_acc = edge_prediction_eval_ddp(model=dynperturb_model, negative_edge_sampler=nn_test_rand_sampler, data=new_node_test_data, n_neighbors=NUM_NEIGHBORS)
 
     # Plot and save confusion matrix and AUC bar chart
     try:
@@ -440,9 +441,9 @@ for i in range(args.n_runs):
     # Restore memory again if enabled
     if USE_MEMORY:
         try:
-            dynpertub_model.module.memory.restore_memory(val_memory_backup)
+            dynperturb_model.module.memory.restore_memory(val_memory_backup)
         except Exception as e:
             print(f"[Warning] Failed to restore memory: {e}")
         logger.info("TGN model saved")
 
-    torch.save(dynpertub_model.module.state_dict(), MODEL_SAVE_PATH)
+    torch.save(dynperturb_model.module.state_dict(), MODEL_SAVE_PATH)

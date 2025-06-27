@@ -1,8 +1,8 @@
 import torch
 import numpy as np
-from sklearn.metrics import roc_auc_score,average_precision_score,f1_score,accuracy_score,precision_recall_fscore_support
 import torch.distributed as dist
 import math
+from sklearn.metrics import roc_auc_score,average_precision_score,f1_score,accuracy_score,precision_recall_fscore_support
 
 # Evaluate edge prediction (binary classification) for a batch of edges (inductive setting)
 def edge_prediction_eval_link(model, negative_edge_sampler, data, n_neighbors, batch_size=200):
@@ -57,7 +57,7 @@ def edge_prediction_eval_link(model, negative_edge_sampler, data, n_neighbors, b
 
 
 # Evaluate node classification in distributed setting
-def node_classification_eval(dynpertub_model, data, edge_idxs, batch_size, n_neighbors, num_classes):
+def node_classification_eval(dynperturb_model, data, edge_idxs, batch_size, n_neighbors, num_classes):
     """
     Evaluate node classification in distributed setting.
     Returns per-class AUC, precision, recall, F1, support, predicted
@@ -71,7 +71,7 @@ def node_classification_eval(dynpertub_model, data, edge_idxs, batch_size, n_nei
     num_batch = math.ceil(num_instance / batch_size)
 
     with torch.no_grad():
-        dynpertub_model.eval()  # Set model to evaluation mode
+        dynperturb_model.eval()  # Set model to evaluation mode
 
         # Iterate over all batches
         for k in range(num_batch):
@@ -86,10 +86,10 @@ def node_classification_eval(dynpertub_model, data, edge_idxs, batch_size, n_nei
             labels_batch = data.labels[s_idx:e_idx]
 
             # Compute temporal embeddings for source and destination nodes
-            source_embedding, destination_embedding, _ = dynpertub_model.module.compute_temporal_embeddings(sources_batch,destinations_batch,destinations_batch,timestamps_batch,edge_idxs_batch,n_neighbors)
+            source_embedding, destination_embedding, _ = dynperturb_model.module.compute_temporal_embeddings(sources_batch,destinations_batch,destinations_batch,timestamps_batch,edge_idxs_batch,n_neighbors)
 
             # Get logits and probabilities for node classification
-            logits = dynpertub_model.module.node_classification_decoder(source_embedding)
+            logits = dynperturb_model.module.node_classification_decoder(source_embedding)
             prob = torch.softmax(logits, dim=-1)
 
             local_pred_prob.append(prob.cpu())

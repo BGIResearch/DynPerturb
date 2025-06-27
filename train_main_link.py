@@ -1,7 +1,3 @@
-from evaluation.evaluation import edge_prediction_eval_link
-from model.DynPertubModel import DynPertubModel
-from utils.DataLoader import get_data, compute_time_statistics
-from utils.utils import EarlyStopMonitor, RandEdgeSampler, get_neighbor_finder
 import math
 import time
 import sys
@@ -13,6 +9,10 @@ from pathlib import Path
 import os
 from copy import deepcopy
 import logging
+from evaluation.evaluation import edge_prediction_eval_link
+from model.DynPerturbModel import DynPerturbModel
+from utils.DataLoader import get_data, compute_time_statistics
+from utils.utils import EarlyStopMonitor, RandEdgeSampler, get_neighbor_finder
 
 # Set working directory and random seeds for reproducibility
 os.chdir("./")
@@ -20,7 +20,7 @@ torch.manual_seed(0)
 np.random.seed(0)
 
 # Parse command-line arguments for model and training configuration
-parser = argparse.ArgumentParser("DynPertubModel self-supervised training")
+parser = argparse.ArgumentParser("DynPerturbModel self-supervised training")
 parser.add_argument("-d", "--data", type=str, help="Dataset name (e.g., wikipedia or reddit)", default="celltype32")
 parser.add_argument("--bs", type=int, default=200, help="Batch size")
 parser.add_argument("--prefix", type=str, default="", help="Prefix for checkpoint naming")
@@ -144,7 +144,7 @@ for i in range(args.n_runs):
     Path(RESULTS_DIR).mkdir(parents=True, exist_ok=True)
 
     # Initialize model for link prediction
-    dynpertub_model = DynPertubModel(
+    dynperturb_model = DynPerturbModel(
         num_nodes = num_nodes, neighbor_finder = train_ngh_finder, node_features = node_features,
         edge_features = edge_features, device = device, n_layers = NUM_LAYER, n_heads = NUM_HEADS, dropout = DROP_OUT,
         use_memory = USE_MEMORY, message_dimension = MESSAGE_DIM, memory_dimension = MEMORY_DIM, memory_update_at_start = not args.memory_update_at_end,
@@ -156,8 +156,8 @@ for i in range(args.n_runs):
     
     # Define loss function and optimizer for training
     criterion = torch.nn.BCELoss()
-    optimizer = torch.optim.Adam(dynpertub_model.parameters(), lr = LEARNING_RATE)
-    dynpertub_model = dynpertub_model.to(device)
+    optimizer = torch.optim.Adam(dynperturb_model.parameters(), lr = LEARNING_RATE)
+    dynperturb_model = dynperturb_model.to(device)
 
     # Prepare training statistics and early stopping
     num_instance = len(train_data.sources)
@@ -183,9 +183,9 @@ for i in range(args.n_runs):
         
         # Training phase
         if USE_MEMORY:
-            dynpertub_model.memory.__init_memory__()  # Re-initialize memory at the start of each epoch
+            dynperturb_model.memory.__init_memory__()  # Re-initialize memory at the start of each epoch
         
-        dynpertub_model.set_neighbor_finder(train_ngh_finder)  # Set neighbor finder for training
+        dynperturb_model.set_neighbor_finder(train_ngh_finder)  # Set neighbor finder for training
         m_loss = []  # Store batch losses for this epoch
         
         # Iterate over batches with backpropagation frequency
@@ -215,8 +215,8 @@ for i in range(args.n_runs):
                     neg_label = torch.zeros(size, dtype=torch.float, device=device)
                 
                 # Forward Pass 
-                dynpertub_model = dynpertub_model.train()
-                pos_prob, neg_prob = dynpertub_model.compute_edge_probabilities(sources_batch, destinations_batch, negatives_batch, timestamps_batch, edge_idxs_batch, NUM_NEIGHBORS)
+                dynperturb_model = dynperturb_model.train()
+                pos_prob, neg_prob = dynperturb_model.compute_edge_probabilities(sources_batch, destinations_batch, negatives_batch, timestamps_batch, edge_idxs_batch, NUM_NEIGHBORS)
                 loss += criterion(pos_prob.squeeze(), pos_label) + criterion(neg_prob.squeeze(), neg_label)
                 
             loss /= args.backprop_every
@@ -225,7 +225,7 @@ for i in range(args.n_runs):
             step_loss = loss.item()
             m_loss.append(step_loss)
             if USE_MEMORY:
-                dynpertub_model.memory.detach_memory()
+                dynperturb_model.memory.detach_memory()
                 
         epoch_time = time.time() - start_epoch
         epoch_times.append(epoch_time)
@@ -235,21 +235,21 @@ for i in range(args.n_runs):
         print(f"Training Loss: {avg_train_loss:.4f} (Epoch Time: {epoch_time:.2f}s)")
 
         # Validation phase
-        dynpertub_model.set_neighbor_finder(full_ngh_finder)
+        dynperturb_model.set_neighbor_finder(full_ngh_finder)
         if USE_MEMORY:
-            train_memory_backup = dynpertub_model.memory.backup_memory()
+            train_memory_backup = dynperturb_model.memory.backup_memory()
             
-        val_ap, val_auc, val_acc, val_f1 = edge_prediction_eval_link(model=dynpertub_model, negative_edge_sampler=val_rand_sampler, data=val_data, n_neighbors=NUM_NEIGHBORS)
+        val_ap, val_auc, val_acc, val_f1 = edge_prediction_eval_link(model=dynperturb_model, negative_edge_sampler=val_rand_sampler, data=val_data, n_neighbors=NUM_NEIGHBORS)
         if USE_MEMORY:
-            val_memory_backup = dynpertub_model.memory.backup_memory()
-            dynpertub_model.memory.restore_memory(train_memory_backup)
+            val_memory_backup = dynperturb_model.memory.backup_memory()
+            dynperturb_model.memory.restore_memory(train_memory_backup)
             
         if USE_MEMORY:
-            dynpertub_model.memory.__init_memory__()
-        nn_val_ap, nn_val_auc, nn_val_acc, nn_val_f1 = edge_prediction_eval_link(model=dynpertub_model, negative_edge_sampler=val_rand_sampler, data=new_node_val_data, n_neighbors=NUM_NEIGHBORS)
+            dynperturb_model.memory.__init_memory__()
+        nn_val_ap, nn_val_auc, nn_val_acc, nn_val_f1 = edge_prediction_eval_link(model=dynperturb_model, negative_edge_sampler=val_rand_sampler, data=new_node_val_data, n_neighbors=NUM_NEIGHBORS)
         
         if USE_MEMORY:
-            dynpertub_model.memory.restore_memory(val_memory_backup)
+            dynperturb_model.memory.restore_memory(val_memory_backup)
             
         new_nodes_val_aps.append(nn_val_ap)
         val_aps.append(val_ap)
@@ -277,52 +277,52 @@ for i in range(args.n_runs):
             best_loss = val_auc
             best_epoch = epoch
             early_stopper.best_epoch = epoch
-            early_stopper.best_model_state = deepcopy(dynpertub_model.state_dict())
-            torch.save(dynpertub_model.state_dict(), MODEL_SAVE_PATH)
+            early_stopper.best_model_state = deepcopy(dynperturb_model.state_dict())
+            torch.save(dynperturb_model.state_dict(), MODEL_SAVE_PATH)
             logger.info(f'Best model saved at epoch {epoch}')
             
         # Check early stopping condition
         if early_stopper.early_stop_check_raw(val_auc):
             logger.info(f'No improvement over {args.patience} epochs, stopping training at epoch {epoch}')
             logger.info(f'Loading the best model at epoch {early_stopper.best_epoch}')
-            dynpertub_model.load_state_dict(torch.load(MODEL_SAVE_PATH))
+            dynperturb_model.load_state_dict(torch.load(MODEL_SAVE_PATH))
             logger.info(f'Loaded the best model at epoch {early_stopper.best_epoch} for inference')
-            dynpertub_model.eval()
+            dynperturb_model.eval()
             break
         else:
-            torch.save(dynpertub_model.state_dict(), get_checkpoint_path(epoch))
+            torch.save(dynperturb_model.state_dict(), get_checkpoint_path(epoch))
 
     if best_epoch != -1:
-        dynpertub_model.load_state_dict(early_stopper.best_model_state)
+        dynperturb_model.load_state_dict(early_stopper.best_model_state)
         logger.info(f'Loaded the best model from epoch {best_epoch} for testing')
         
     if USE_MEMORY:
         try:
-            best_memory_backup = dynpertub_model.memory.backup_memory()
+            best_memory_backup = dynperturb_model.memory.backup_memory()
         except Exception as e:
             print(f"[Warning] Failed to backup memory: {e}")
             
     if USE_MEMORY:
         try:
-            dynpertub_model.memory.__init_memory__()
+            dynperturb_model.memory.__init_memory__()
         except Exception as e:
             print(f"[Warning] Failed to init memory: {e}")
             
     # Test phase
-    dynpertub_model.embedding_module.neighbor_finder = full_ngh_finder
-    test_ap, test_auc, test_acc, test_f1 = edge_prediction_eval_link(model=dynpertub_model, negative_edge_sampler=test_rand_sampler, data=test_data, n_neighbors=NUM_NEIGHBORS)
+    dynperturb_model.embedding_module.neighbor_finder = full_ngh_finder
+    test_ap, test_auc, test_acc, test_f1 = edge_prediction_eval_link(model=dynperturb_model, negative_edge_sampler=test_rand_sampler, data=test_data, n_neighbors=NUM_NEIGHBORS)
     logger.info('Test statistics: Old nodes -- auc: {:.4f}, ap: {:.4f}, acc: {:.4f}, f1: {:.4f}'.format(test_auc, test_ap, test_acc, test_f1))
     logger.info('Test statistics: New nodes -- auc: {:.4f}, ap: {:.4f}, acc: {:.4f}, f1: {:.4f}'.format(nn_test_auc, nn_test_ap, nn_test_acc, nn_test_f1))
     
     # Restore Memory for Test on New Nodes (if needed) 
     if USE_MEMORY and best_memory_backup is not None:
         try:
-            dynpertub_model.memory.restore_memory(best_memory_backup)
+            dynperturb_model.memory.restore_memory(best_memory_backup)
         except Exception as e:
             print(f"[Warning] Failed to restore memory: {e}")
     
     # Evaluate on New Node Test Set
-    nn_test_ap, nn_test_auc, nn_test_acc, nn_test_f1 = edge_prediction_eval_link(model=dynpertub_model, negative_edge_sampler=nn_test_rand_sampler, data=new_node_test_data, n_neighbors=NUM_NEIGHBORS)
+    nn_test_ap, nn_test_auc, nn_test_acc, nn_test_f1 = edge_prediction_eval_link(model=dynperturb_model, negative_edge_sampler=nn_test_rand_sampler, data=new_node_test_data, n_neighbors=NUM_NEIGHBORS)
     try:
         with open(results_path, "wb") as f:
             pickle.dump({"val_aps": val_aps, "new_nodes_val_aps": new_nodes_val_aps, "test_ap": test_ap, "new_node_test_ap": nn_test_ap, "epoch_times": epoch_times, "train_losses": train_losses, "total_epoch_times": total_epoch_times}, f)
@@ -333,13 +333,13 @@ for i in range(args.n_runs):
     # Restore Memory Again (if needed)
     if USE_MEMORY and best_memory_backup is not None:
         try:
-            dynpertub_model.memory.restore_memory(best_memory_backup)
+            dynperturb_model.memory.restore_memory(best_memory_backup)
         except Exception as e:
             print(f"[Warning] Failed to restore memory: {e}")
             
     # Save Final Model
     try:
-        torch.save(dynpertub_model.state_dict(), MODEL_SAVE_PATH)
+        torch.save(dynperturb_model.state_dict(), MODEL_SAVE_PATH)
         logger.info('TGN model saved')
     except Exception as e:
         print(f"[Warning] Failed to save model: {e}")

@@ -1,16 +1,16 @@
-from model.DynPertubModel import DynPertubModel
-from utils.DataLoader import get_data, compute_time_statistics
-from utils.utils import RandEdgeSampler, get_neighbor_finder
 import sys
 import argparse
 import torch
 import numpy as np
-from pathlib import Path
 import os
 import json
-from collections import defaultdict
 import logging
 import time
+from collections import defaultdict
+from model.DynPerturbModel import DynPerturbModel
+from utils.DataLoader import get_data, compute_time_statistics
+from utils.utils import RandEdgeSampler, get_neighbor_finder
+from pathlib import Path
 
 # Set environment variables for debugging and disabling pixi collection
 os.environ["SWANLAB_REQUIREMENTS"] = "off"
@@ -22,7 +22,7 @@ torch.manual_seed(0)
 np.random.seed(0)
 
 # Argument parser for command-line options
-parser = argparse.ArgumentParser("DynPertubModel self-supervised training")
+parser = argparse.ArgumentParser("DynPerturbModel self-supervised training")
 parser.add_argument("-d", "--data", type=str, help="Dataset name (e.g., wikipedia or reddit)", default="celltype32")
 parser.add_argument("--bs", type=int, default=200, help="Batch size")
 parser.add_argument("--prefix", type=str, default="", help="Prefix for checkpoint naming")
@@ -138,8 +138,8 @@ MODEL_SAVE_PATH = f'./'  # best model path
 if not os.path.exists(MODEL_SAVE_PATH):
     raise FileNotFoundError(f"Best model not found at {MODEL_SAVE_PATH}, please train first.")
 
-# Initialize DynPertubModel for link prediction
-dynpertub_model = DynPertubModel(
+# Initialize DynPerturbModel for link prediction
+dynperturb_model = DynPerturbModel(
     num_nodes = num_nodes, neighbor_finder = train_ngh_finder, node_features = node_features,
     edge_features = edge_features, device = device, n_layers = NUM_LAYER, n_heads = NUM_HEADS,
     dropout = DROP_OUT, use_memory = USE_MEMORY, message_dimension = MESSAGE_DIM, memory_dimension = MEMORY_DIM,
@@ -151,17 +151,17 @@ dynpertub_model = DynPertubModel(
     use_source_embedding_in_message = args.use_source_embedding_in_message, num_classes = NumClasses, mode = MODE
 )
 
-dynpertub_model = dynpertub_model.to(device)
-dynpertub_model.load_state_dict(torch.load(MODEL_SAVE_PATH), strict=False)
-dynpertub_model.eval()
+dynperturb_model = dynperturb_model.to(device)
+dynperturb_model.load_state_dict(torch.load(MODEL_SAVE_PATH), strict=False)
+dynperturb_model.eval()
 logger.info(f'Successfully loaded the best model from {MODEL_SAVE_PATH}')
 logger.info("Starting batched inference with memory propagation (no per-time grouping)...")
 
 # Initialize memory if enabled
 if USE_MEMORY:
-    dynpertub_model.memory.__init_memory__()
+    dynperturb_model.memory.__init_memory__()
 
-dynpertub_model.set_neighbor_finder(full_ngh_finder)
+dynperturb_model.set_neighbor_finder(full_ngh_finder)
 
 saved_embeddings = defaultdict(list)
 
@@ -188,7 +188,7 @@ with torch.no_grad():
             neg = dst.clone()
             
             # Compute temporal embeddings for source and destination nodes
-            emb_src, emb_dst, _ = dynpertub_model.compute_temporal_embeddings(src, dst, neg, ts, eid)
+            emb_src, emb_dst, _ = dynperturb_model.compute_temporal_embeddings(src, dst, neg, ts, eid)
             
             # Save embeddings for each node in the batch
             for i in range(len(src)):

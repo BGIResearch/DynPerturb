@@ -9,8 +9,8 @@ from modules.embedding_module import get_embedding_module
 from model.time_encoding import TimeEncode
 
 
-# DynPertubModel: Main Model Class
-class DynPertubModel(torch.nn.Module):
+# DynPerturbModel: Main Model Class
+class DynPerturbModel(torch.nn.Module):
     """
     Temporal Graph Neural Network Model for link prediction and node classification.
     """
@@ -24,7 +24,7 @@ class DynPertubModel(torch.nn.Module):
         aggregator_type="last", memory_updater_type="gru",
         use_destination_embedding_in_message=False, use_source_embedding_in_message=False,
         dyrep=False, mode="link_prediction"):
-        super(DynPertubModel, self).__init__()
+        super(DynPerturbModel, self).__init__()
 
         # Model hyperparameters
         self.n_layers = n_layers  # Number of GNN layers
