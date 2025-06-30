@@ -39,7 +39,7 @@ The Python dependencies for this project are listed in the `requirements.txt` fi
 2. **Create a conda environment** (if you don’t have one already):
 
    ```bash
-   conda create --name DynPerturb python=3.x
+   conda create --name DynPerturb python=3.10
    ```
 
 3. **Activate the conda environment**:
