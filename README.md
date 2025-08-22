@@ -56,7 +56,7 @@ The Python dependencies for this project are listed in the `requirements.txt` fi
 
 This will install all the Python dependencies needed for the project.
 
-## Task1 : Transcription factor perturbation reveals dose-, time-, and state-dependent regulatory sensitivity during kidney injury
+## Task1 : Temporal perturbation mapping reveals regulatory fragility in CKD tubule cells
 **Training Command**
 
 This script is used to train a **self-supervised model** for **link prediction** in graph-based data. The training process is designed to handle large-scale datasets and support **distributed training** using **PyTorch's DistributedDataParallel (DDP)**.
@@ -90,7 +90,7 @@ python train_ChangeNodeFeat_SaveEmbeddings_link.py --data HumanBone --bs 64 --n_
 
 
 
-## Task2 : Cell-level perturbation reveals lineage-specific regulatory sensitivity during human hematopoiesis.
+## Task2 : Lineage-specific transcription factor perturbations shape hematopoietic trajectories
 
 **Training Command**
 
@@ -128,7 +128,7 @@ python train_ChangeNodeFeat_SaveEmbeddings_ddp.py --data HumanBone --bs 64 --n_e
 
 
 
-## Task3 : Spatial perturbation reveals region-specific regulatory sensitivity during heart development
+## Task3 : Spatially resolved perturbations uncover region-specific regulation in cardiac development
 
 **Training Command**
 
