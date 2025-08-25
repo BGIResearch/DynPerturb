@@ -13,20 +13,27 @@ All training data and model parameters used in this study are available at https
 
 Benchmark gene pairs for mESC and hESC datasets are avaliable fromhttps://github.com/xiaoyeye/TDL.
 
+
+
 ### Tasks Data
 
 The data for Gene Regulatory Network (GRN) inference comes from the following dataset:
 
-   1.**Adult Human Kidney Single-Cell RNA-seq** (Version 1.5)
+   **1.Adult Human Kidney Single-Cell RNA-seq** (Version 1.5)
 - **Source**: [CellxGene Single-Cell Data](https://cellxgene.cziscience.com/e/dea717d4-7bc0-4e46-950f-fd7e1cc8df7d.cxg/)
 - This dataset includes single-cell gene expression profiles from different cell types of the human kidney.
 
-   2.**Human Bone Marrow Hematopoietic Development** (Balanced Reference Map)
+
+
+   **2.Human Bone Marrow Hematopoietic Development** (Balanced Reference Map)
 
 - **Source**: [CellxGene Bone Marrow Data](https://cellxgene.cziscience.com/e/cd2f23c1-aef1-48ae-8eb4-0bcf124e567d.cxg/)
 - The dataset helps explore the differentiation process of blood cells from human bone marrow.
 
-   3.**Murine Cardiac Development Spatiotemporal Transcriptome Sequencing**
+
+
+   **3.Murine Cardiac Development Spatiotemporal Transcriptome Sequencing**
+
 - **Source**: [Gigascience Article](https://doi.org/10.1093/gigascience/giaf012)
 - Provides a detailed spatial transcriptomic map of murine heart development, useful for understanding heart tissue differentiation and development.
 
