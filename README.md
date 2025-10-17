@@ -1,33 +1,61 @@
-
 # DynPerturb：Dynamic Perturbation Modeling for Spatiotemporal Single-Cell Systems
 
 ## DynPerturb Overview
+
 DynPerturb is an advanced deep learning model designed to infer gene regulatory networks (GRNs) and analyze the effects of perturbations on cellular states using single-cell RNA-seq data. By incorporating both temporal and spatial information, DynPerturb enhances the understanding of gene interactions during cellular development, disease progression, and response to perturbations, making it an invaluable tool for biologists and researchers in drug discovery, genetic studies, and disease modeling.
 
 ![image-20250626030846102](model.png)
 
 ## Data
+
 All training data and model parameters used in this study are available at https://bgipan.genomics.cn/#/link/t2YuR3VHmS0Jaozwqlvk (access code: p2Qv).
 
 ### Benchmark Data
 
 Benchmark gene pairs for mESC and hESC datasets are avaliable fromhttps://github.com/xiaoyeye/TDL.
 
-
-
 ### Tasks Data
 
 1.  **Adult Human Kidney Single-Cell RNA-seq** (Version 1.5)
+
  - **Source**: [CellxGene Single-Cell Data](https://cellxgene.cziscience.com/e/dea717d4-7bc0-4e46-950f-fd7e1cc8df7d.cxg/)
  - This dataset includes single-cell gene expression profiles from different cell types of the human kidney.
 
 2.  **Human Bone Marrow Hematopoietic Development** (Balanced Reference Map)
+
  - **Source**: [CellxGene Bone Marrow Data](https://cellxgene.cziscience.com/e/cd2f23c1-aef1-48ae-8eb4-0bcf124e567d.cxg/)
  - The dataset helps explore the differentiation process of blood cells from human bone marrow.
 
 3.  **Murine Cardiac Development Spatiotemporal Transcriptome Sequencing**
+
  - **Source**: [Gigascience Article](https://doi.org/10.1093/gigascience/giaf012)
  - Provides a detailed spatial transcriptomic map of murine heart development, useful for understanding heart tissue differentiation and development.
+
+
+
+## Software Environment
+
+| **Component**         | **Version**                             |
+| --------------------- | --------------------------------------- |
+| **Operating System**  | Kylin Linux Advanced Server V10 (Sword) |
+| **Python**            | 3.10.16                                 |
+| **CUDA**              | 12.2                                    |
+| **NVIDIA Driver**     | 535.104.12                              |
+| **Core Dependencies** | Refer to `requirements.txt`             |
+
+
+
+## Hardware Requirements
+
+| **Hardware Item**    | **Specification/Model**                |
+| -------------------- | -------------------------------------- |
+| **CPU Architecture** | aarch64 (ARM)                          |
+| **CPU Model**        | HiSilicon Kunpeng-920                  |
+| **Total RAM**        | **256 GB** (266414208 kB)              |
+| **GPU**              | **NVIDIA A100-PCIE-40GB** ($\times$ 4) |
+| **VRAM Used (Peak)** | $\sim 8.7$ GB (on GPU 0)               |
+
+
 
 
 ## Requirements
@@ -56,7 +84,10 @@ The Python dependencies for this project are listed in the `requirements.txt` fi
 
 This will install all the Python dependencies needed for the project.
 
+
+
 ## Task1 : Temporal perturbation mapping reveals regulatory fragility in CKD tubule cells
+
 **Training Command**
 
 This script is used to train a **self-supervised model** for **link prediction** in graph-based data. The training process is designed to handle large-scale datasets and support **distributed training** using **PyTorch's DistributedDataParallel (DDP)**.
@@ -66,11 +97,11 @@ python train_main_link.py -d aPT-B --use_memory --memory_updater rnn  --message_
 ```
 
 - **`--use_memory`**:
-   Enabling this option allows the model to incorporate **memory augmentation** for nodes during training. This can enhance the model's ability to remember historical interactions or patterns in the data, which is particularly useful for temporal graph models.
+  Enabling this option allows the model to incorporate **memory augmentation** for nodes during training. This can enhance the model's ability to remember historical interactions or patterns in the data, which is particularly useful for temporal graph models.
 - **`--memory_updater rnn`**:
-   This argument specifies the type of memory update mechanism to use. The `rnn` option uses a **Recurrent Neural Network (RNN)** to update and manage node memory over time, making it suitable for tasks that require temporal memory updates.
+  This argument specifies the type of memory update mechanism to use. The `rnn` option uses a **Recurrent Neural Network (RNN)** to update and manage node memory over time, making it suitable for tasks that require temporal memory updates.
 - **`--message_function mlp`**:
-   The `mlp` option sets the **message function** used to process information between nodes. Specifically, it utilizes a **Multi-Layer Perceptron (MLP)** to aggregate and transform messages exchanged between nodes during the computation, allowing the model to learn complex relationships between nodes.
+  The `mlp` option sets the **message function** used to process information between nodes. Specifically, it utilizes a **Multi-Layer Perceptron (MLP)** to aggregate and transform messages exchanged between nodes during the computation, allowing the model to learn complex relationships between nodes.
 
 **Perturbation and Extraction of Node Features**
 
@@ -88,6 +119,12 @@ python train_ChangeNodeFeat_SaveEmbeddings_link.py --data HumanBone --bs 64 --n_
 - **`--n_layer`**: Number of network layers.
 - **`--lr`**: Learning rate.
 
+**Expected Results:**
+
+- **Node Temporal Embeddings File**- `embeddings_.json` : The file contains a chronologically-ordered series of high-dimensional state vectors. Each vector documents the state of a specific biological entity (such as a gene or cell type) at a distinct point in time during the process of hematopoietic development in the bone marrow.
+
+- **Execution Log** -`train.log` : This is a text file for logging and debugging.
+
 
 
 ## Task2 : Lineage-specific transcription factor perturbations shape hematopoietic trajectories
@@ -101,10 +138,10 @@ python train_main_ddp.py -d HumanBone --memory_dim 1000  --use_memory --numClass
 ```
 
 - **`--memory_dim`**:
-   Sets the dimension of the memory space for the model. The `memory_dim` controls how much memory each node will hold, which can influence model performance.
+  Sets the dimension of the memory space for the model. The `memory_dim` controls how much memory each node will hold, which can influence model performance.
 
 - **`--use_memory`**:
-   This flag enables the use of **node memory augmentation**, which helps the model retain and utilize information from previous steps or nodes. This is particularly helpful for tasks requiring historical context.
+  This flag enables the use of **node memory augmentation**, which helps the model retain and utilize information from previous steps or nodes. This is particularly helpful for tasks requiring historical context.
 
 - **`--num_classes`**:
 
@@ -125,6 +162,12 @@ python train_ChangeNodeFeat_SaveEmbeddings_ddp.py --data HumanBone --bs 64 --n_e
 - **`--n_epoch`**: Number of epochs to train the model.****
 - **`--n_layer`**: Number of layers in the neural network.
 - **`--lr`**: Learning rate for optimization.
+
+**Expected Results:**
+
+- **Node Temporal Embeddings File**- `embeddings_.json` : The file contains a chronologically-ordered series of high-dimensional state vectors, which quantify the impact of lineage-specific transcription factor perturbations on hematopoietic trajectories by documenting the state of each biological entity (e.g., a transcription factor or cell type) at distinct points in developmental time.
+
+- **Execution Log** -`train.log` : This is a text file for logging and debugging.
 
 
 
@@ -164,10 +207,17 @@ python train_ChangeNodeFeat_SaveEmbeddings_ddp.py --data mouse --bs 64 --n_epoch
 - **`--n_layer`**: Number of layers in the neural network.
 - **`--lr`**: Learning rate for optimization.
 
+**Expected Results:**
+
+- **(Node Spatiotemporal Embeddings File**- `embeddings_.json` : The file provides a quantitative, spatiotemporal atlas delineating cardiac development at the molecular level.
+
+- **Execution Log** -`train.log` : This is a text file for logging and debugging.
+
 
 
 ## License
 
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
 
-## Contact
+
 
