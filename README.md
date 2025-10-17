@@ -53,7 +53,6 @@ Benchmark gene pairs for mESC and hESC datasets are avaliable fromhttps://github
 | **CPU Model**        | HiSilicon Kunpeng-920                  |
 | **Total RAM**        | **256 GB** (266414208 kB)              |
 | **GPU**              | **NVIDIA A100-PCIE-40GB** ($\times$ 4) |
-| **VRAM Used (Peak)** | $\sim 8.7$ GB (on GPU 0)               |
 
 
 
@@ -83,6 +82,8 @@ The Python dependencies for this project are listed in the `requirements.txt` fi
    ```
 
 This will install all the Python dependencies needed for the project.
+
+**Installation Time：**Estimated installation time is approximately 45 minutes.
 
 
 
@@ -118,6 +119,8 @@ python train_ChangeNodeFeat_SaveEmbeddings_link.py --data HumanBone --bs 64 --n_
 - **`--n_epoch`**: Number of epochs.
 - **`--n_layer`**: Number of network layers.
 - **`--lr`**: Learning rate.
+
+**Runtime：**The total computational runtime for training and extracting embeddings using 9 clusters is **184 hours** (160 hours for training plus 24 hours for embedding extraction).
 
 **Expected Results:**
 
@@ -163,6 +166,8 @@ python train_ChangeNodeFeat_SaveEmbeddings_ddp.py --data HumanBone --bs 64 --n_e
 - **`--n_layer`**: Number of layers in the neural network.
 - **`--lr`**: Learning rate for optimization.
 
+**Runtime：**The total computational runtime for training and extracting embeddings is **13 hours** (8 hours for training plus 5 hours for embedding extraction).
+
 **Expected Results:**
 
 - **Node Temporal Embeddings File**- `embeddings_.json` : The file contains a chronologically-ordered series of high-dimensional state vectors, which quantify the impact of lineage-specific transcription factor perturbations on hematopoietic trajectories by documenting the state of each biological entity (e.g., a transcription factor or cell type) at distinct points in developmental time.
@@ -206,6 +211,8 @@ python train_ChangeNodeFeat_SaveEmbeddings_ddp.py --data mouse --bs 64 --n_epoch
 - **`--n_epoch`**: Number of epochs to train the model.
 - **`--n_layer`**: Number of layers in the neural network.
 - **`--lr`**: Learning rate for optimization.
+
+**Runtime：**The total computational runtime for training and extracting embeddings is **6 hours** (4 hours for training plus 2 hours for embedding extraction).
 
 **Expected Results:**
 
